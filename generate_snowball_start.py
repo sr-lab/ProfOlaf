@@ -17,7 +17,7 @@ from utils.proxy_generator import get_proxy
 from tqdm import tqdm
 import hashlib
 
-pg = get_proxy()
+#pg = get_proxy()
 
 def search_google_scholar_citedby_id(title: str) -> Optional[int]:
     """
@@ -43,7 +43,7 @@ def search_google_scholar_citedby_id(title: str) -> Optional[int]:
         match = re.search(r"cites=(\d+)", scholar_id)
         if match is None:
             return None
-        return match.group(1)
+        return int(match.group(1))
     
     except Exception as e:
         print(f"Error searching for '{title}': {e}")
@@ -144,13 +144,13 @@ def generate_snowball_start(input_file: str, output_file: str, delay: float = 2.
 def main():
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('input_file', help='Path to the input file (json or text)')
-    parser.add_argument('output_file', help='Path to the output JSON file')
+    #parser.add_argument('output_file', help='Path to the output JSON file')
     parser.add_argument('--delay', type=float, default=2.0, 
                        help='Delay between Google Scholar requests in seconds (default: 2.0)')
     
     args = parser.parse_args()
     
-    generate_snowball_start(args.input_file, args.output_file, args.delay)
+    generate_snowball_start(args.input_file, "test_files/iteration_0.json", args.delay)
 
 
 if __name__ == "__main__":

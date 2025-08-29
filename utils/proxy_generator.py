@@ -1,5 +1,5 @@
 import os
-import scholarly
+from scholarly import scholarly
 from scholarly import ProxyGenerator
 
 def get_proxy():
@@ -9,7 +9,7 @@ def get_proxy():
     try:
         pg = ProxyGenerator()
 
-        if pg.ScraperAPI(os.getenv("SCRAPERAPI_KEY")):
+        if pg.ScraperAPI(os.getenv("SCRAPER_API_KEY")):
             scholarly.use_proxy(pg)
             print("Using ScraperAPI proxy")
         else:
