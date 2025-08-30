@@ -16,40 +16,21 @@ from scholarly import scholarly
 from utils.proxy_generator import get_proxy
 from tqdm import tqdm
 import hashlib
+from utils.db_management import (
+    DBManager, 
+    get_article_data,
+    initialize_db
+)
 
 #pg = get_proxy()
 
-def search_google_scholar_citedby_id(title: str) -> Optional[int]:
+def extract_titles_from_file(file_path: str) -> List[str]:
     """
-    Search Google Scholar for a paper title and extract the Google Scholar ID.
-    Args:
-        title: The paper title to search for
-        
-    Returns:
-        The Google Scholar ID if found, None otherwise
+    Extract titles from a file. The file should be a text file with one title per line.
     """
-    try:
-        search_query = scholarly.search_pubs(title)
-        result = next(search_query, None)
-        if result is None:
-            return None
-        
-        scholar_id = result.get('citedby_url')
-        if scholar_id is None:
-            # create hash from title (the hash should be around 20 characters)
-            hash_id = hashlib.md5(title.encode('utf-8')).hexdigest()
-            return hash_id
-        
-        match = re.search(r"cites=(\d+)", scholar_id)
-        if match is None:
-            return None
-        return int(match.group(1))
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f.readlines()]
     
-    except Exception as e:
-        print(f"Error searching for '{title}': {e}")
-        return None
-
-
 def extract_titles_from_json(json_file_path: str) -> List[str]:
     """
     Extract titles from a json file. The json file should have one exact key 'papers' and the value should be a list of dictionaries.
@@ -78,15 +59,43 @@ def extract_titles_from_json(json_file_path: str) -> List[str]:
     except Exception as e:
         print(f"Error reading JSON file: {e}")
         return []
+    
 
-def extract_titles_from_file(file_path: str) -> List[str]:
+def search_google_scholar(title: str) -> Optional[int]:
     """
-    Extract titles from a file. The file should be a text file with one title per line.
+    Search Google Scholar for a paper title and extract the Google Scholar ID.
+    Args:
+        title: The paper title to search for
+        
+    Returns:
+        The Google Scholar ID if found, None otherwise
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f.readlines()]
+    try:
+        search_query = scholarly.search_pubs(title)
+        result = next(search_query, None)
+        if result is None:
+            return None
+        
+        scholar_id = result.get('citedby_url')
+        if scholar_id is None:
+            print("No scholar_id found for", title)
+            id = hashlib.md5(title.encode('utf-8')).hexdigest()
+            article_data = get_article_data(result, id)
+            return article_data
+        
+        match = re.search(r"cites=(\d+)", scholar_id)
+        if match is None:
+            print("No match found for", title)
+            return None
+        id = int(match.group(1))
+        article_data = get_article_data(result, id)
+        return article_data
+    
+    except Exception as e:
+        print(f"Error searching for '{title}': {e}")
+        return None
 
-def generate_snowball_start(input_file: str, output_file: str, delay: float = 2.0):
+def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0, db_manager: DBManager = None):
     """
     Generate snowball sampling starting points from accepted papers.
     
@@ -115,42 +124,30 @@ def generate_snowball_start(input_file: str, output_file: str, delay: float = 2.
     seen_titles = []
     
     for i, title in tqdm(enumerate(titles, 1), total=len(titles), desc="Searching for Google Scholar IDs"):      
-        citedby_id = search_google_scholar_citedby_id(title)
-
-        if citedby_id:
-            initial_pubs.append({citedby_id: title})
-            seen_titles.append(title)
+        article_data = search_google_scholar(title)
+        
+        if article_data:
+            initial_pubs.append(article_data)
+            seen_titles.append((title, article_data.id))
         
         if i < len(titles):
             time.sleep(delay)
-
-    output_data = {
-        "initial_pubs": initial_pubs,
-        "seen_titles": seen_titles,
-        "new_pubs": []
-    }
     
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(output_data, f, indent=2)
-        
-        print(f"Found Google Scholar IDs for {len(initial_pubs)} out of {len(titles)} papers")
-        print(f"\nResults saved to {output_file}")
-
-    except Exception as e:
-        print(f"Error writing output file: {e}")
+    db_manager.insert_iteration_data(iteration, initial_pubs)
+    db_manager.insert_seen_titles_data(seen_titles)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('input_file', help='Path to the input file (json or text)')
-    #parser.add_argument('output_file', help='Path to the output JSON file')
+    parser.add_argument('--iteration', help='iteration number', type=int, default=0)
     parser.add_argument('--delay', type=float, default=2.0, 
                        help='Delay between Google Scholar requests in seconds (default: 2.0)')
     
     args = parser.parse_args()
     
-    generate_snowball_start(args.input_file, "test_files/iteration_0.json", args.delay)
+    db_manager = initialize_db(0)
+    generate_snowball_start(args.input_file, 0, args.delay, db_manager)
 
 
 if __name__ == "__main__":
