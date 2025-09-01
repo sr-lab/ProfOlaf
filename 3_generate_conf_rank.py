@@ -54,9 +54,10 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate conf rank')
     parser.add_argument('--iteration', help='iteration number', type=int)
+    parser.add_argument('--db_path', help='db path', type=str)
     args = parser.parse_args()
 
-    db_manager = initialize_db(args.iteration)
+    db_manager = initialize_db(args.db_path, args.iteration)
     articles = db_manager.get_iteration_data(args.iteration)
 
     venues = get_venues(articles)

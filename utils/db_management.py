@@ -1,5 +1,6 @@
 import sqlite3
 import json
+from collections import defaultdict
 from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
 
@@ -7,6 +8,7 @@ def get_article_data(pub, pub_id, new_pub: bool = False):
     pub_info = {}
     pub_info["id"] = pub_id
     pub_info["container_type"] = pub["container_type"]
+    pub_info["eprint_url"] = pub["eprint_url"]
     pub_info["source"] = pub["source"]
     pub_info["title"] = pub["bib"]["title"]
     pub_info["authors"] = pub["bib"]["author"]
@@ -32,12 +34,15 @@ class ArticleData:
     num_citations: int = -1
     citedby_url: str = ""
     url_related_articles: str = ""
+    eprint_url: str = ""
     year_filtered_out: bool = False
     venue_filtered_out: bool = False
     title_filtered_out: bool = False
     abstract_filtered_out: bool = False
     language_filtered_out: bool = False
+    download_filtered_out: bool = False
     new_pub: bool = False
+    selected: bool = False
     bibtex: str = ""
     dict = asdict
 
@@ -51,6 +56,8 @@ class DBManager:
     def __init__(self, db_path: str):
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
+
+    # -------------------------- Iteration Table Methods --------------------------
 
     def create_iteration_table(self, iteration: int):
         # create a table for the iteration if it doesn't exist
@@ -71,26 +78,6 @@ class DBManager:
             field_definitions.append(f"{field_name} {self.SQL_TYPES[field_type]}")
         self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(field_definitions)})")
         self.conn.commit()
-    
-    def create_seen_titles_table(self):
-        table_name = "seen_titles"
-        tables_found = self.cursor.execute(
-            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
-        ).fetchall()
-        if tables_found != []:
-            return
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS seen_titles (title TEXT PRIMARY KEY, id TEXT)")
-        self.conn.commit()
-
-    def create_conf_rank_table(self):
-        table_name = "conf_rank"
-        tables_found = self.cursor.execute(
-            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
-        ).fetchall()
-        if tables_found != []:
-            return
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS conf_rank (venue TEXT PRIMARY KEY, rank TEXT)")
-        self.conn.commit()
 
     def insert_iteration_data(self, iteration: int, data: List[ArticleData]):
         table_name = f"iteration_{iteration}"
@@ -110,31 +97,16 @@ class DBManager:
             self.conn.commit()
         except Exception as e:
             raise ValueError(f"Could not add elements to table: {e}")
-    
-    def insert_seen_titles_data(self, data: List[Tuple[str, str]]):
-        # data is a list of tuples (title, id)
-        table_name = "seen_titles"
-        self.cursor.executemany(f"INSERT INTO {table_name} (title, id) VALUES (?, ?)", data)
-        self.conn.commit()
-
-    def insert_conf_rank_data(self, data: List[Tuple[str, str]]):
-        table_name = "conf_rank"
-        self.cursor.executemany(f"INSERT INTO {table_name} (venue, rank) VALUES (?, ?)", data)
-        self.conn.commit()
-
-    def get_iteration_data(self, iteration: int):
+        
+    def get_iteration_data(self, iteration: int, **kwargs):
         table_name = f"iteration_{iteration}"
-        self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall()
-    
-    def get_seen_titles_data(self):
-        table_name = "seen_titles"
-        self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall()
-    
-    def get_conf_rank_data(self):
-        table_name = "conf_rank"
-        self.cursor.execute(f"SELECT * FROM {table_name}")
+        if kwargs:
+            columns = ', '.join(kwargs.keys())
+            placeholders = ', '.join(['?'] * len(kwargs))
+            sql_query = f"SELECT {columns} FROM {table_name} WHERE {columns} = {placeholders}"
+            self.cursor.execute(sql_query, [kwargs[key] for key in kwargs])
+        else:
+            self.cursor.execute(f"SELECT * FROM {table_name}")
         return self.cursor.fetchall()
     
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
@@ -149,8 +121,70 @@ class DBManager:
         self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id])
         self.conn.commit()
 
-def initialize_db(iteration: int):
-    db_manager = DBManager(f"prof_olaf.db")
+    def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, str, str]]):
+        table_name = f"iteration_{iteration}"
+        # Group updates by column name
+        updates_by_column = defaultdict(list)
+        for article_id, new_value, column_name in update_data:
+            updates_by_column[column_name].append((new_value, article_id))
+        
+        for column_name, column_updates in updates_by_column.items():
+            query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ?"
+            self.cursor.executemany(query, column_updates)
+
+    # -------------------------- Seen Titles Table Methods --------------------------
+    
+    def create_seen_titles_table(self):
+        table_name = "seen_titles"
+        tables_found = self.cursor.execute(
+            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
+        ).fetchall()
+        if tables_found != []:
+            return
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS seen_titles (title TEXT PRIMARY KEY, id TEXT)")
+        self.conn.commit()
+
+    def insert_seen_titles_data(self, data: List[Tuple[str, str]]):
+        # data is a list of tuples (title, id)
+        table_name = "seen_titles"
+        self.cursor.executemany(f"INSERT INTO {table_name} (title, id) VALUES (?, ?)", data)
+        self.conn.commit()
+
+    def get_seen_titles_data(self):
+        table_name = "seen_titles"
+        self.cursor.execute(f"SELECT * FROM {table_name}")
+        return self.cursor.fetchall()
+
+    # -------------------------- Conf Rank Table Methods --------------------------
+
+    def create_conf_rank_table(self):
+        table_name = "conf_rank"
+        tables_found = self.cursor.execute(
+            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
+        ).fetchall()
+        if tables_found != []:
+            return
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS conf_rank (venue TEXT PRIMARY KEY, rank TEXT)")
+        self.conn.commit()
+
+    def insert_conf_rank_data(self, data: List[Tuple[str, str]]):
+        table_name = "conf_rank"
+        self.cursor.executemany(f"INSERT INTO {table_name} (venue, rank) VALUES (?, ?)", data)
+        self.conn.commit()
+    
+    def get_conf_rank_data(self):
+        table_name = "conf_rank"
+        self.cursor.execute(f"SELECT * FROM {table_name}")
+        return self.cursor.fetchall()
+    
+    def get_venue_rank_data(self, venue: str):
+        table_name = "conf_rank"
+        self.cursor.execute(f"SELECT rank FROM {table_name} WHERE venue = ?", (venue,))
+        return self.cursor.fetchone()
+
+
+def initialize_db(db_path: str, iteration: int):
+    db_manager = DBManager(db_path)
     db_manager.create_iteration_table(iteration)
     db_manager.create_seen_titles_table()
     db_manager.create_conf_rank_table()

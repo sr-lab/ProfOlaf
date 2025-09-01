@@ -6,7 +6,7 @@ import os
 import sys
 from scholarly import scholarly
 from dotenv import load_dotenv
-
+import hashlib
 from utils.proxy_generator import get_proxy
 from utils.db_management import (
     DBManager, 
@@ -43,9 +43,11 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
 
         for pub in pubs:
             if "citedby_url" not in pub:
-                continue
-            m = re.search("cites=[\d+,]*", pub["citedby_url"])
-            pub_id = m.group()[6:]
+                print("No citedby_url found for", pub["bib"]["title"], "replacing it with hashed title")
+                pub_id = hashlib.sha256(pub["bib"]["title"].encode()).hexdigest()
+            else:
+                m = re.search("cites=[\d+,]*", pub["citedby_url"])
+                pub_id = m.group()[6:]
 
             article_data.append(get_article_data(pub, pub_id, new_pub=True))
 
@@ -58,9 +60,9 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('--iteration', help='iteration number', type=int, default=0)
-    
+    parser.add_argument('--db_path', help='db path', type=str)  
     args = parser.parse_args()
-    db_manager = initialize_db(args.iteration)
+    db_manager = initialize_db(args.db_path, args.iteration)
     
     initial_pubs = db_manager.get_iteration_data(args.iteration - 1)
     

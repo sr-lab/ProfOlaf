@@ -12,8 +12,11 @@ from utils.db_management import (
     get_article_data,
     initialize_db
 )
+from utils.proxy_generator import get_proxy
 
 load_dotenv()
+
+pg = get_proxy()
 
 def get_bibtex(iteration: int, article: ArticleData):
     current_wait_time = 30
@@ -34,10 +37,10 @@ def get_bibtex(iteration: int, article: ArticleData):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get bibtex for articles')
     parser.add_argument('--iteration', help='iteration number', type=int)
-    
+    parser.add_argument('--db_path', help='db path', type=str)
     args = parser.parse_args()
 
-    db_manager = initialize_db(args.iteration)
+    db_manager = initialize_db(args.db_path, args.iteration)
     articles = db_manager.get_iteration_data(args.iteration)
     
     for article in articles:

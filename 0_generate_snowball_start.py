@@ -140,14 +140,14 @@ def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0,
 def main():
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('input_file', help='Path to the input file (json or text)')
-    parser.add_argument('--iteration', help='iteration number', type=int, default=0)
     parser.add_argument('--delay', type=float, default=2.0, 
                        help='Delay between Google Scholar requests in seconds (default: 2.0)')
-    
+    parser.add_argument('--db_path', help='db path', type=str)
     args = parser.parse_args()
     
-    db_manager = initialize_db(0)
-    generate_snowball_start(args.input_file, 0, args.delay, db_manager)
+    ITERATION_0 = 0
+    db_manager = initialize_db(args.db_path, ITERATION_0)
+    generate_snowball_start(args.input_file, ITERATION_0, args.delay, db_manager)
 
 
 if __name__ == "__main__":
