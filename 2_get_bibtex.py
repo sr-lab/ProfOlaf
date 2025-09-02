@@ -20,6 +20,9 @@ with open("search_conf.json", "r") as f:
 pg = get_proxy(search_conf["proxy_key"])
 
 def get_bibtex(iteration: int, article: ArticleData):
+    """
+    Get the bibtex string for the given article.
+    """
     current_wait_time = 30
     while True:
         try:

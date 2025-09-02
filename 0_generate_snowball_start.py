@@ -23,6 +23,8 @@ from utils.db_management import (
     initialize_db
 )
 
+ITERATION_0 = 0 
+
 load_dotenv()
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
@@ -149,8 +151,7 @@ def main():
                        help='Delay between Google Scholar requests in seconds (default: 2.0)')
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
-    
-    ITERATION_0 = 0
+
     db_manager = initialize_db(args.db_path, ITERATION_0)
     generate_snowball_start(args.input_file, ITERATION_0, args.delay, db_manager)
 

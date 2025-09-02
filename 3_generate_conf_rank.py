@@ -14,6 +14,9 @@ with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 def input_venue_rank():
+    """
+    Input the rank of the venue.
+    """
     while True:
         rank = input(f"What is the rank of this venue? ")
         if rank not in ["A*", "A", "B", "C", "D", "Q1", "Q2", "Q3", "Q4", "NA"]:
@@ -23,6 +26,9 @@ def input_venue_rank():
     return rank
 
 def get_venues(articles: List[ArticleData]):
+    """
+    Get the venues from the articles.
+    """
     venues = set()
     for article in articles:
         if article.bibtex != "":
@@ -36,6 +42,9 @@ def get_venues(articles: List[ArticleData]):
     return venues
 
 def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
+    """
+    Get the unindexed venues.
+    """
     unindexed_venues = []
     for i, venue in enumerate(venues):
         if venue not in conf_rank.keys():

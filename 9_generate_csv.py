@@ -10,6 +10,9 @@ with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 def generate_csv(db_manager: DBManager, iterations: List[int], output_path: str):
+    """
+    Generate a CSV file with the article data.
+    """
     article_data = []
     for iteration in iterations:
         print("Iteration: ", iteration)

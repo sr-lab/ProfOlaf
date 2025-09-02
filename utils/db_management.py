@@ -5,6 +5,9 @@ from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
 
 def get_article_data(pub, pub_id, new_pub: bool = False, selected: bool = False):
+    """
+    Get the article data from the pub.
+    """
     pub_info = {}
     pub_info["id"] = pub_id
     pub_info["container_type"] = pub["container_type"]
@@ -63,171 +66,215 @@ class DBManager:
     def create_iteration_table(self, iteration: int):
         # create a table for the iteration if it doesn't exist
         table_name = f"iteration_{iteration}"
-        tables_found = self.cursor.execute(
-            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
-        ).fetchall()
+        try:
+            tables_found = self.cursor.execute(
+                f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
+            ).fetchall()
 
-        if tables_found != []:
-            return
-        
-        field_definitions = []
-        for field in fields(ArticleData):
-            field_name = field.name
-            field_type = field.type
-            if field_type not in self.SQL_TYPES:
-                raise ValueError(f"Unsupported field type: {field_type}")
-            sql_type = self.SQL_TYPES[field_type]
-            field_definitions.append(f"{field_name} {sql_type}")
+            if tables_found != []:
+                return
             
-        create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(field_definitions)})"
-        
-        self.cursor.execute(create_sql)
-        self.conn.commit()
-        
-        # Verify table schema
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        schema_info = self.cursor.fetchall()
+            field_definitions = []
+            for field in fields(ArticleData):
+                field_name = field.name
+                field_type = field.type
+                if field_type not in self.SQL_TYPES:
+                    raise ValueError(f"Unsupported field type: {field_type}")
+                sql_type = self.SQL_TYPES[field_type]
+                field_definitions.append(f"{field_name} {sql_type}")
+                
+            create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(field_definitions)})"
+            
+            self.cursor.execute(create_sql)
+            self.conn.commit()
+            
+            # Verify table schema
+            self.cursor.execute(f"PRAGMA table_info({table_name})")
+            schema_info = self.cursor.fetchall()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to create iteration table: {e}")
         
     def insert_iteration_data(self, iteration: int, data: List[ArticleData]):
         table_name = f"iteration_{iteration}"
-        data_dicts = [data_element.__dict__ for data_element in data]
-    
-        for i, data_dict in enumerate(data_dicts):
-            for key, value in data_dict.items():
-                if hasattr(value, 'value'):  # Handle enum values
-                    data_dict[key] = value.value
-                elif isinstance(value, (list, dict)):
-                    data_dict[key] = json.dumps(value)
-                elif value is None:
-                    data_dict[key] = ""
-                elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
-                    data_dict[key] = str(value)
-        
-        columns = ', '.join(data_dicts[0].keys())
-        placeholders = ', '.join(['?'] * len(data_dicts[0]))
-        sql_query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-        
         try:
+            data_dicts = [data_element.__dict__ for data_element in data]
+        
+            for i, data_dict in enumerate(data_dicts):
+                for key, value in data_dict.items():
+                    if hasattr(value, 'value'):  # Handle enum values
+                        data_dict[key] = value.value
+                    elif isinstance(value, (list, dict)):
+                        data_dict[key] = json.dumps(value)
+                    elif value is None:
+                        data_dict[key] = ""
+                    elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
+                        data_dict[key] = str(value)
+            
+            columns = ', '.join(data_dicts[0].keys())
+            placeholders = ', '.join(['?'] * len(data_dicts[0]))
+            sql_query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+            
             self.cursor.executemany(sql_query, [tuple(data_dict.values()) for data_dict in data_dicts])
             self.conn.commit()
         except Exception as e:
+            self.conn.rollback()
             raise ValueError(f"Could not add elements to table: {e}")
         
     def get_iteration_data(self, iteration: int, **kwargs):
         """Get iteration data as dictionaries with field names as keys."""
         table_name = f"iteration_{iteration}"
-        self.conn.row_factory = sqlite3.Row
-        
-        if kwargs:
-            columns = ', '.join(kwargs.keys())
-            placeholders = ', '.join(['?'] * len(kwargs))
-            sql_query = f"SELECT * FROM {table_name} WHERE {columns} = {placeholders}"
-            self.cursor.execute(sql_query, [kwargs[key] for key in kwargs])
-        else:
-            self.cursor.execute(f"SELECT * FROM {table_name}")
-        
-        rows = self.cursor.fetchall()
-        dict_list = []
-        for row in rows:
-            # Access row data directly using column names and indices
-            row_dict = {}
-            for i, field in enumerate(fields(ArticleData)):
-                if i < len(row):
-                    row_dict[field.name] = row[i]
-            dict_list.append(ArticleData(**row_dict))
-        
-        self.conn.row_factory = None
-        return dict_list
+        try:
+            self.conn.row_factory = sqlite3.Row
+            
+            if kwargs:
+                columns = ', '.join(kwargs.keys())
+                placeholders = ', '.join(['?'] * len(kwargs))
+                sql_query = f"SELECT * FROM {table_name} WHERE {columns} = {placeholders}"
+                self.cursor.execute(sql_query, [kwargs[key] for key in kwargs])
+            else:
+                self.cursor.execute(f"SELECT * FROM {table_name}")
+            
+            rows = self.cursor.fetchall()
+            dict_list = []
+            for row in rows:
+                # Access row data directly using column names and indices
+                row_dict = {}
+                for i, field in enumerate(fields(ArticleData)):
+                    if i < len(row):
+                        row_dict[field.name] = row[i]
+                dict_list.append(ArticleData(**row_dict))
+            
+            return dict_list
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to get iteration data: {e}")
+        finally:
+            self.conn.row_factory = None
     
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
         table_name = f"iteration_{iteration}"
-        columns = ', '.join(kwargs.keys())
-        placeholders = ', '.join(['?'] * len(kwargs))
-        sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ?"
-        for key, value in kwargs.items():
-            if hasattr(value, 'value'):  # Handle enum values
-                kwargs[key] = value.value
-            elif isinstance(value, (list, dict)):
-                kwargs[key] = json.dumps(value)
-            elif value is None:
-                kwargs[key] = ""
-            elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
-                kwargs[key] = str(value)
-        self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id])
-        self.conn.commit()
+        try:
+            columns = ', '.join(kwargs.keys())
+            placeholders = ', '.join(['?'] * len(kwargs))
+            sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ?"
+            for key, value in kwargs.items():
+                if hasattr(value, 'value'):  # Handle enum values
+                    kwargs[key] = value.value
+                elif isinstance(value, (list, dict)):
+                    kwargs[key] = json.dumps(value)
+                elif value is None:
+                    kwargs[key] = ""
+                elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
+                    kwargs[key] = str(value)
+            self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id])
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to update iteration data: {e}")
 
     def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, str, str]]):
         table_name = f"iteration_{iteration}"
-        
-        updates_by_column = defaultdict(list)
-        for article_id, new_value, column_name in update_data:
-            updates_by_column[column_name].append((new_value, article_id))
-        
-        for column_name, column_updates in updates_by_column.items():
-            query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ?"
-            self.cursor.executemany(query, column_updates)
+        try:
+            updates_by_column = defaultdict(list)
+            for article_id, new_value, column_name in update_data:
+                updates_by_column[column_name].append((new_value, article_id))
+            
+            for column_name, column_updates in updates_by_column.items():
+                query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ?"
+                self.cursor.executemany(query, column_updates)
             self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to update batch iteration data: {e}")
 
     # -------------------------- Seen Titles Table Methods --------------------------
     
     def create_seen_titles_table(self):
         table_name = "seen_titles"
-        tables_found = self.cursor.execute(
-            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
-        ).fetchall()
-        if tables_found != []:
-            return
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS seen_titles (title TEXT PRIMARY KEY, id TEXT)")
-        self.conn.commit()
+        try:
+            tables_found = self.cursor.execute(
+                f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
+            ).fetchall()
+            if tables_found != []:
+                return
+            self.cursor.execute("CREATE TABLE IF NOT EXISTS seen_titles (title TEXT PRIMARY KEY, id TEXT)")
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to create seen titles table: {e}")
 
     def insert_seen_titles_data(self, data: List[Tuple[str, str]]):
         # data is a list of tuples (title, id)
         table_name = "seen_titles"
-        
-        # Convert integer IDs to strings to prevent overflow
-        converted_data = []
-        for i, (title, article_id) in enumerate(data):
-            if isinstance(article_id, int):
-                converted_data.append((title, str(article_id)))
-            else:
-                converted_data.append((title, article_id))
-        
-        # Use INSERT OR IGNORE to skip duplicates, or INSERT OR REPLACE to update existing entries
-        # Change to INSERT OR REPLACE if you want to update existing entries instead
-        self.cursor.executemany(f"INSERT OR IGNORE INTO {table_name} (title, id) VALUES (?, ?)", converted_data)
-        self.conn.commit()
+        try:
+            # Convert integer IDs to strings to prevent overflow
+            converted_data = []
+            for i, (title, article_id) in enumerate(data):
+                if isinstance(article_id, int):
+                    converted_data.append((title, str(article_id)))
+                else:
+                    converted_data.append((title, article_id))
+            
+            # Use INSERT OR IGNORE to skip duplicates, or INSERT OR REPLACE to update existing entries
+            # Change to INSERT OR REPLACE if you want to update existing entries instead
+            self.cursor.executemany(f"INSERT OR IGNORE INTO {table_name} (title, id) VALUES (?, ?)", converted_data)
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to insert seen titles data: {e}")
 
     def get_seen_titles_data(self):
         table_name = "seen_titles"
-        self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall()
+        try:
+            self.cursor.execute(f"SELECT * FROM {table_name}")
+            return self.cursor.fetchall()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to get seen titles data: {e}")
 
     # -------------------------- Conf Rank Table Methods --------------------------
 
     def create_conf_rank_table(self):
         table_name = "conf_rank"
-        tables_found = self.cursor.execute(
-            f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
-        ).fetchall()
-        if tables_found != []:
-            return
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS conf_rank (venue TEXT PRIMARY KEY, rank TEXT)")
-        self.conn.commit()
+        try:
+            tables_found = self.cursor.execute(
+                f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
+            ).fetchall()
+            if tables_found != []:
+                return
+            self.cursor.execute("CREATE TABLE IF NOT EXISTS conf_rank (venue TEXT PRIMARY KEY, rank TEXT)")
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to create conf rank table: {e}")
 
     def insert_conf_rank_data(self, data: List[Tuple[str, str]]):
         table_name = "conf_rank"
-        self.cursor.executemany(f"INSERT INTO {table_name} (venue, rank) VALUES (?, ?)", data)
-        self.conn.commit()
+        try:
+            self.cursor.executemany(f"INSERT INTO {table_name} (venue, rank) VALUES (?, ?)", data)
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to insert conf rank data: {e}")
     
     def get_conf_rank_data(self):
         table_name = "conf_rank"
-        self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall()
+        try:
+            self.cursor.execute(f"SELECT * FROM {table_name}")
+            return self.cursor.fetchall()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to get conf rank data: {e}")
     
     def get_venue_rank_data(self, venue: str):
         table_name = "conf_rank"
-        self.cursor.execute(f"SELECT rank FROM {table_name} WHERE venue = ?", (venue,))
-        return self.cursor.fetchone()
+        try:
+            self.cursor.execute(f"SELECT rank FROM {table_name} WHERE venue = ?", (venue,))
+            return self.cursor.fetchone()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to get venue rank data: {e}")
 
 
 def initialize_db(db_path: str, iteration: int):

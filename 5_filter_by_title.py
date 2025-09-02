@@ -6,6 +6,9 @@ with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 def choose_elements(articles, db_manager, iteration): 
+    """
+    Choose the elements by title.
+    """
     updated_data = []
     for i, article in enumerate(articles):
         print(f"({i+1}/{len(articles)})")

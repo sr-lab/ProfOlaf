@@ -20,6 +20,9 @@ with open("search_conf.json", "r") as f:
 pg = get_proxy(search_conf["proxy_key"])
 
 def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
+    """
+    Get articles that cite the pubs for the given iteration.
+    """
     while len(initial_pubs) > 0:
         current_wait_time = 30
         citedby = initial_pubs.pop().id
@@ -71,6 +74,5 @@ if __name__ == "__main__":
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()
-
-
+    
     get_articles(args.iteration, initial_pubs, db_manager)

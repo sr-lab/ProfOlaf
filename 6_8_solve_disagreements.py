@@ -1,20 +1,11 @@
 import sys
-import json
 import argparse
 from utils.db_management import initialize_db
 
-def load_json_file(file_path):
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-    return data
-
-
-def save_json_file(data, output_file):
-    with open(output_file, 'w') as file:
-        json.dump(data, file, indent=4)
-
-
 def solve_disagreements(iteration, search_db_1, search_db_2):
+    """
+    Solve the disagreements between the two raters.
+    """
     db_manager_1 = initialize_db(search_db_1, iteration)
     db_manager_2 = initialize_db(search_db_2, iteration)
 
