@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
 
-def get_article_data(pub, pub_id, new_pub: bool = False):
+def get_article_data(pub, pub_id, new_pub: bool = False, selected: bool = False):
     pub_info = {}
     pub_info["id"] = pub_id
     pub_info["container_type"] = pub["container_type"]
@@ -13,12 +13,13 @@ def get_article_data(pub, pub_id, new_pub: bool = False):
     pub_info["title"] = pub["bib"]["title"]
     pub_info["authors"] = pub["bib"]["author"]
     pub_info["venue"] = pub["bib"]["venue"]
-    pub_info["pub_year"] = pub["bib"]["pub_year"]
+    pub_info["pub_year"] = "0" if not pub["bib"]["pub_year"].isdigit() else pub["bib"]["pub_year"]
     pub_info["pub_url"] = pub["pub_url"]
     pub_info["num_citations"] = pub["num_citations"]
     pub_info["citedby_url"] = pub.get("citedby_url", "")
     pub_info["url_related_articles"] = pub.get("url_related_articles", "")
     pub_info["new_pub"] = new_pub
+    pub_info["selected"] = selected
     return ArticleData(**pub_info)
 
 @dataclass
@@ -49,7 +50,7 @@ class ArticleData:
 class DBManager:
     SQL_TYPES = {
         str: 'TEXT',
-        int: 'INTEGER',
+        int: 'TEXT',  # Changed from INTEGER to TEXT to handle large integers
         float: 'REAL',
         bool: 'BOOLEAN'
     }
@@ -75,23 +76,37 @@ class DBManager:
             field_type = field.type
             if field_type not in self.SQL_TYPES:
                 raise ValueError(f"Unsupported field type: {field_type}")
-            field_definitions.append(f"{field_name} {self.SQL_TYPES[field_type]}")
-        self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(field_definitions)})")
+            sql_type = self.SQL_TYPES[field_type]
+            field_definitions.append(f"{field_name} {sql_type}")
+            
+        create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(field_definitions)})"
+        
+        self.cursor.execute(create_sql)
         self.conn.commit()
-
+        
+        # Verify table schema
+        self.cursor.execute(f"PRAGMA table_info({table_name})")
+        schema_info = self.cursor.fetchall()
+        
     def insert_iteration_data(self, iteration: int, data: List[ArticleData]):
         table_name = f"iteration_{iteration}"
         data_dicts = [data_element.__dict__ for data_element in data]
-        
-        for data_dict in data_dicts:
+    
+        for i, data_dict in enumerate(data_dicts):
             for key, value in data_dict.items():
-                if not isinstance(value, (list, dict)):
-                    continue
-                data_dict[key] = json.dumps(value)
+                if hasattr(value, 'value'):  # Handle enum values
+                    data_dict[key] = value.value
+                elif isinstance(value, (list, dict)):
+                    data_dict[key] = json.dumps(value)
+                elif value is None:
+                    data_dict[key] = ""
+                elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
+                    data_dict[key] = str(value)
         
         columns = ', '.join(data_dicts[0].keys())
         placeholders = ', '.join(['?'] * len(data_dicts[0]))
         sql_query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+        
         try:
             self.cursor.executemany(sql_query, [tuple(data_dict.values()) for data_dict in data_dicts])
             self.conn.commit()
@@ -99,15 +114,30 @@ class DBManager:
             raise ValueError(f"Could not add elements to table: {e}")
         
     def get_iteration_data(self, iteration: int, **kwargs):
+        """Get iteration data as dictionaries with field names as keys."""
         table_name = f"iteration_{iteration}"
+        self.conn.row_factory = sqlite3.Row
+        
         if kwargs:
             columns = ', '.join(kwargs.keys())
             placeholders = ', '.join(['?'] * len(kwargs))
-            sql_query = f"SELECT {columns} FROM {table_name} WHERE {columns} = {placeholders}"
+            sql_query = f"SELECT * FROM {table_name} WHERE {columns} = {placeholders}"
             self.cursor.execute(sql_query, [kwargs[key] for key in kwargs])
         else:
             self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall()
+        
+        rows = self.cursor.fetchall()
+        dict_list = []
+        for row in rows:
+            # Access row data directly using column names and indices
+            row_dict = {}
+            for i, field in enumerate(fields(ArticleData)):
+                if i < len(row):
+                    row_dict[field.name] = row[i]
+            dict_list.append(ArticleData(**row_dict))
+        
+        self.conn.row_factory = None
+        return dict_list
     
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
         table_name = f"iteration_{iteration}"
@@ -115,15 +145,20 @@ class DBManager:
         placeholders = ', '.join(['?'] * len(kwargs))
         sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ?"
         for key, value in kwargs.items():
-            if not isinstance(value, (list, dict)):
-                continue
-            kwargs[key] = json.dumps(value)
+            if hasattr(value, 'value'):  # Handle enum values
+                kwargs[key] = value.value
+            elif isinstance(value, (list, dict)):
+                kwargs[key] = json.dumps(value)
+            elif value is None:
+                kwargs[key] = ""
+            elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
+                kwargs[key] = str(value)
         self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id])
         self.conn.commit()
 
     def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, str, str]]):
         table_name = f"iteration_{iteration}"
-        # Group updates by column name
+        
         updates_by_column = defaultdict(list)
         for article_id, new_value, column_name in update_data:
             updates_by_column[column_name].append((new_value, article_id))
@@ -131,6 +166,7 @@ class DBManager:
         for column_name, column_updates in updates_by_column.items():
             query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ?"
             self.cursor.executemany(query, column_updates)
+            self.conn.commit()
 
     # -------------------------- Seen Titles Table Methods --------------------------
     
@@ -147,7 +183,18 @@ class DBManager:
     def insert_seen_titles_data(self, data: List[Tuple[str, str]]):
         # data is a list of tuples (title, id)
         table_name = "seen_titles"
-        self.cursor.executemany(f"INSERT INTO {table_name} (title, id) VALUES (?, ?)", data)
+        
+        # Convert integer IDs to strings to prevent overflow
+        converted_data = []
+        for i, (title, article_id) in enumerate(data):
+            if isinstance(article_id, int):
+                converted_data.append((title, str(article_id)))
+            else:
+                converted_data.append((title, article_id))
+        
+        # Use INSERT OR IGNORE to skip duplicates, or INSERT OR REPLACE to update existing entries
+        # Change to INSERT OR REPLACE if you want to update existing entries instead
+        self.cursor.executemany(f"INSERT OR IGNORE INTO {table_name} (title, id) VALUES (?, ?)", converted_data)
         self.conn.commit()
 
     def get_seen_titles_data(self):

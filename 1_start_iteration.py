@@ -1,8 +1,7 @@
 import argparse
+import json
 import re
 import time
-import traceback
-import os
 import sys
 from scholarly import scholarly
 from dotenv import load_dotenv
@@ -15,19 +14,23 @@ from utils.db_management import (
 )
 
 load_dotenv()
-#pg = get_proxy()
+with open("search_conf.json", "r") as f:
+    search_conf = json.load(f)
+
+pg = get_proxy(search_conf["proxy_key"])
 
 def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
     while len(initial_pubs) > 0:
         current_wait_time = 30
-        citedby = list(initial_pubs.pop())[0]
+        citedby = initial_pubs.pop().id
         if not str(citedby).isdigit():
             continue
         while True:
             try:
                 pubs = scholarly.search_citedby(int(citedby))
                 print("pubs", pubs)
-            except:
+            except Exception as e:
+                print(e)
                 print(f"Retrying {citedby}, waiting {current_wait_time}...", file=sys.stderr)
                 sys.stdout.flush()
                 time.sleep(current_wait_time)
@@ -60,11 +63,11 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('--iteration', help='iteration number', type=int, default=0)
-    parser.add_argument('--db_path', help='db path', type=str)  
+    parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])  
     args = parser.parse_args()
     db_manager = initialize_db(args.db_path, args.iteration)
     
-    initial_pubs = db_manager.get_iteration_data(args.iteration - 1)
+    initial_pubs = db_manager.get_iteration_data(args.iteration - 1, selected=True)
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()

@@ -15,8 +15,9 @@ from utils.db_management import (
 from utils.proxy_generator import get_proxy
 
 load_dotenv()
-
-pg = get_proxy()
+with open("search_conf.json", "r") as f:
+    search_conf = json.load(f)
+pg = get_proxy(search_conf["proxy_key"])
 
 def get_bibtex(iteration: int, article: ArticleData):
     current_wait_time = 30
@@ -24,8 +25,9 @@ def get_bibtex(iteration: int, article: ArticleData):
         try:
             query = scholarly.search_pubs(article.title)
             pub = next(query)
-            bibtex = pub.bibtex
-        except:
+            bibtex = scholarly.bibtex(pub)
+        except Exception as e:
+            print(e)
             print(f"Retrying {article}, waiting {current_wait_time}...", file=sys.stderr)
             sys.stdout.flush()
             time.sleep(current_wait_time)
@@ -37,7 +39,7 @@ def get_bibtex(iteration: int, article: ArticleData):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get bibtex for articles')
     parser.add_argument('--iteration', help='iteration number', type=int)
-    parser.add_argument('--db_path', help='db path', type=str)
+    parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
 
     db_manager = initialize_db(args.db_path, args.iteration)

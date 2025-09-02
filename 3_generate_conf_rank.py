@@ -10,6 +10,9 @@ from utils.db_management import (
     initialize_db
 )
 
+with open("search_conf.json", "r") as f:
+    search_conf = json.load(f)
+
 def input_venue_rank():
     while True:
         rank = input(f"What is the rank of this venue? ")
@@ -23,7 +26,6 @@ def get_venues(articles: List[ArticleData]):
     venues = set()
     for article in articles:
         if article.bibtex != "":
-            print(article.bibtex)
             library = bibtexparser.loads(article.bibtex)
             if library.entries[0]["ENTRYTYPE"] in ["book", "phdthesis", "mastersthesis"]:
                 continue
@@ -54,7 +56,7 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate conf rank')
     parser.add_argument('--iteration', help='iteration number', type=int)
-    parser.add_argument('--db_path', help='db path', type=str)
+    parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
 
     db_manager = initialize_db(args.db_path, args.iteration)

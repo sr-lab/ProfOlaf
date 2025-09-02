@@ -16,13 +16,18 @@ from scholarly import scholarly
 from utils.proxy_generator import get_proxy
 from tqdm import tqdm
 import hashlib
+from dotenv import load_dotenv
 from utils.db_management import (
     DBManager, 
     get_article_data,
     initialize_db
 )
 
-#pg = get_proxy()
+load_dotenv()
+with open("search_conf.json", "r") as f:
+    search_conf = json.load(f)
+
+pg = get_proxy(search_conf["proxy_key"])
 
 def extract_titles_from_file(file_path: str) -> List[str]:
     """
@@ -80,7 +85,7 @@ def search_google_scholar(title: str) -> Optional[int]:
         if scholar_id is None:
             print("No scholar_id found for", title)
             id = hashlib.md5(title.encode('utf-8')).hexdigest()
-            article_data = get_article_data(result, id)
+            article_data = get_article_data(result, id, new_pub=True, selected=True)
             return article_data
         
         match = re.search(r"cites=(\d+)", scholar_id)
@@ -88,7 +93,7 @@ def search_google_scholar(title: str) -> Optional[int]:
             print("No match found for", title)
             return None
         id = int(match.group(1))
-        article_data = get_article_data(result, id)
+        article_data = get_article_data(result, id, new_pub=True, selected=True)
         return article_data
     
     except Exception as e:
@@ -139,10 +144,10 @@ def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0,
 
 def main():
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
-    parser.add_argument('input_file', help='Path to the input file (json or text)')
+    parser.add_argument('--input_file', help='Path to the input file (json or text)', default=search_conf["initial_file"])
     parser.add_argument('--delay', type=float, default=2.0, 
                        help='Delay between Google Scholar requests in seconds (default: 2.0)')
-    parser.add_argument('--db_path', help='db path', type=str)
+    parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
     
     ITERATION_0 = 0

@@ -1,6 +1,9 @@
 import argparse
 from utils.db_management import initialize_db
+import json
 
+with open("search_conf.json", "r") as f:
+    search_conf = json.load(f)
 
 def choose_elements(articles, db_manager, iteration):
     updated_data = []
@@ -44,6 +47,6 @@ def main(iteration, db_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by title')
     parser.add_argument('--iteration', help='iteration number', type=int)
-    parser.add_argument('--db_path', help='db path', type=str)
+    parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
     main(args.iteration, args.db_path)
