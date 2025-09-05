@@ -58,9 +58,9 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
                 m = re.search("cites=[\d+,]*", pub["citedby_url"])
                 pub_id = m.group()[6:]
             
-            articles.append(get_article_data(pub, pub_id, new_pub=True))
+            articles.append(get_article_data(pub, pub_id, iteration, new_pub=True))
 
-        db_manager.insert_iteration_data(iteration, articles)
+        db_manager.insert_iteration_data(articles)
         db_manager.insert_seen_titles_data([(article.title, article.id) for article in articles])
 
     db_manager.cursor.close()
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     db_manager = initialize_db(args.db_path, args.iteration)
     
-    initial_pubs = db_manager.get_iteration_data(args.iteration - 1, selected=SelectionStage.NOT_SELECTED)
+    initial_pubs = db_manager.get_iteration_data(iteration=args.iteration - 1, selected=SelectionStage.NOT_SELECTED)
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()

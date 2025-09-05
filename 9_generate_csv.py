@@ -16,7 +16,7 @@ def generate_csv(db_manager: DBManager, iterations: List[int], output_path: str)
     article_data = []
     for iteration in iterations:
         print("Iteration: ", iteration)
-        articles = db_manager.get_iteration_data(iteration, selected=True)
+        articles = db_manager.get_iteration_data(iteration=iteration, selected=True)
         print(articles)
         for article in articles:
             print(article.title)

@@ -35,7 +35,7 @@ def choose_elements(articles, db_manager, iteration):
         
 def main(iteration, db_path):
     db_manager = initialize_db(db_path, iteration)
-    articles = db_manager.get_iteration_data(iteration, selected=True)
+    articles = db_manager.get_iteration_data(iteration=iteration, selected=True)
     choose_elements(articles, db_manager, iteration)
 
 if __name__ == "__main__":

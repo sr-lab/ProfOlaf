@@ -69,7 +69,7 @@ def extract_titles_from_json(json_file_path: str) -> List[str]:
         return []
     
 
-def search_google_scholar(title: str) -> Optional[int]:
+def search_google_scholar(title: str, iteration: int) -> Optional[int]:
     """
     Search Google Scholar for a paper title and extract the Google Scholar ID.
     Args:
@@ -88,7 +88,7 @@ def search_google_scholar(title: str) -> Optional[int]:
         if scholar_id is None:
             print("No scholar_id found for", title)
             id = hashlib.md5(title.encode('utf-8')).hexdigest()
-            article_data = get_article_data(result, id, new_pub=True, selected=SelectionStage.SELECTED)
+            article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.SELECTED)
             return article_data
         
         match = re.search(r"cites=(\d+)", scholar_id)
@@ -96,7 +96,7 @@ def search_google_scholar(title: str) -> Optional[int]:
             print("No match found for", title)
             return None
         id = int(match.group(1))
-        article_data = get_article_data(result, id, new_pub=True, selected=SelectionStage.SELECTED)
+        article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.SELECTED)
         return article_data
     
     except Exception as e:
@@ -132,7 +132,7 @@ def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0,
     seen_titles = []
     
     for i, title in tqdm(enumerate(titles, 1), total=len(titles), desc="Searching for Google Scholar IDs"):      
-        article_data = search_google_scholar(title)
+        article_data = search_google_scholar(title, iteration)
         
         if article_data:
             initial_pubs.append(article_data)
@@ -141,7 +141,7 @@ def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0,
         if i < len(titles):
             time.sleep(delay)
     
-    db_manager.insert_iteration_data(iteration, initial_pubs)
+    db_manager.insert_iteration_data(initial_pubs)
     db_manager.insert_seen_titles_data(seen_titles)
 
 

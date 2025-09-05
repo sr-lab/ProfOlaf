@@ -113,7 +113,7 @@ def filter_elements(db_manager: DBManager, iteration: int):
     """
     Filter the elements by metadata.
     """
-    article_data = db_manager.get_iteration_data(iteration)
+    article_data = db_manager.get_iteration_data(iteration=iteration)
     
     updated_data = []
     for i, article in enumerate(article_data):

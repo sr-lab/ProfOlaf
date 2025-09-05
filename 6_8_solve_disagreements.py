@@ -16,8 +16,8 @@ def solve_disagreements(iteration, search_db_1, search_db_2, selection_stage: Di
     db_manager_1 = initialize_db(search_db_1, iteration)
     db_manager_2 = initialize_db(search_db_2, iteration)
 
-    selected_pubs_rater1 = db_manager_1.get_iteration_data(iteration, selected=selection_stage)
-    selected_pubs_rater2 = db_manager_2.get_iteration_data(iteration, selected=selection_stage)
+    selected_pubs_rater1 = db_manager_1.get_iteration_data(iteration=iteration, selected=selection_stage)
+    selected_pubs_rater2 = db_manager_2.get_iteration_data(iteration=iteration, selected=selection_stage)
     disagreements = set(selected_pubs_rater1) ^ set(selected_pubs_rater2)
     filtered = set(selected_pubs_rater1) & set(selected_pubs_rater2)
     disagreements = sorted(list(disagreements))

@@ -14,7 +14,7 @@ class SelectionStage(Enum):
     SELECTED = 4
 
 
-def get_article_data(pub, pub_id, new_pub: bool = False):
+def get_article_data(pub, pub_id, iteration: int, new_pub: bool = False):
     """
     Get the article data from the pub.
     """
@@ -33,6 +33,7 @@ def get_article_data(pub, pub_id, new_pub: bool = False):
     pub_info["url_related_articles"] = pub.get("url_related_articles", "")
     pub_info["new_pub"] = new_pub
     pub_info["selected"] = SelectionStage.NOT_SELECTED
+    pub_info["iteration"] = iteration
     return ArticleData(**pub_info)
 
 @dataclass
@@ -58,6 +59,7 @@ class ArticleData:
     new_pub: bool = False
     selected: bool = False
     bibtex: str = ""
+    iteration: int = 0
     dict = asdict
 
 class DBManager:
@@ -73,9 +75,9 @@ class DBManager:
 
     # -------------------------- Iteration Table Methods --------------------------
 
-    def create_iteration_table(self, iteration: int):
+    def create_iterations(self):
         # create a table for the iteration if it doesn't exist
-        table_name = f"iteration_{iteration}"
+        table_name = "iterations"
         try:
             tables_found = self.cursor.execute(
                 f"""SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'; """
@@ -105,8 +107,8 @@ class DBManager:
             self.conn.rollback()
             raise ValueError(f"Failed to create iteration table: {e}")
         
-    def insert_iteration_data(self, iteration: int, data: List[ArticleData]):
-        table_name = f"iteration_{iteration}"
+    def insert_iteration_data(self, data: List[ArticleData]):
+        table_name = "iterations"
         try:
             data_dicts = [data_element.__dict__ for data_element in data]
         
@@ -131,12 +133,11 @@ class DBManager:
             self.conn.rollback()
             raise ValueError(f"Could not add elements to table: {e}")
         
-    def get_iteration_data(self, iteration: int, **kwargs):
+    def get_iteration_data(self, **kwargs):
         """Get iteration data as dictionaries with field names as keys."""
-        table_name = f"iteration_{iteration}"
+        table_name = "iterations"
         try:
             self.conn.row_factory = sqlite3.Row
-            
             if kwargs:
                 columns = ', '.join(kwargs.keys())
                 placeholders = ', '.join(['?'] * len(kwargs))
@@ -163,11 +164,11 @@ class DBManager:
             self.conn.row_factory = None
     
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
-        table_name = f"iteration_{iteration}"
+        table_name = "iterations"
         try:
             columns = ', '.join(kwargs.keys())
             placeholders = ', '.join(['?'] * len(kwargs))
-            sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ?"
+            sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ? and iteration = ?"
             for key, value in kwargs.items():
                 if hasattr(value, 'value'):  # Handle enum values
                     kwargs[key] = value.value
@@ -177,21 +178,21 @@ class DBManager:
                     kwargs[key] = ""
                 elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
                     kwargs[key] = str(value)
-            self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id])
+            self.cursor.execute(sql_query, [kwargs[key] for key in kwargs] + [article_id, iteration])
             self.conn.commit()
         except Exception as e:
             self.conn.rollback()
             raise ValueError(f"Failed to update iteration data: {e}")
 
     def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, str, str]]):
-        table_name = f"iteration_{iteration}"
+        table_name = "iterations"
         try:
             updates_by_column = defaultdict(list)
             for article_id, new_value, column_name in update_data:
-                updates_by_column[column_name].append((new_value, article_id))
+                updates_by_column[column_name].append((new_value, article_id, iteration))
             
             for column_name, column_updates in updates_by_column.items():
-                query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ?"
+                query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ? and iteration = ?"
                 self.cursor.executemany(query, column_updates)
             self.conn.commit()
         except Exception as e:

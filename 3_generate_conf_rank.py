@@ -69,7 +69,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     db_manager = initialize_db(args.db_path, args.iteration)
-    articles = db_manager.get_iteration_data(args.iteration)
+    articles = db_manager.get_iteration_data(iteration=args.iteration)
 
     venues = get_venues(articles)
 

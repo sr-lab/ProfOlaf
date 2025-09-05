@@ -79,7 +79,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     db_manager = DBManager(args.db_path)
-    articles = db_manager.get_iteration_data(args.iteration)
+    articles = db_manager.get_iteration_data(iteration=args.iteration)
     
     for article in articles:
         get_bibtex(args.iteration, article)
