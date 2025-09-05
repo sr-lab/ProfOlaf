@@ -20,7 +20,8 @@ from dotenv import load_dotenv
 from utils.db_management import (
     DBManager, 
     get_article_data,
-    initialize_db
+    initialize_db, 
+    SelectionStage
 )
 
 ITERATION_0 = 0 
@@ -87,7 +88,7 @@ def search_google_scholar(title: str) -> Optional[int]:
         if scholar_id is None:
             print("No scholar_id found for", title)
             id = hashlib.md5(title.encode('utf-8')).hexdigest()
-            article_data = get_article_data(result, id, new_pub=True, selected=True)
+            article_data = get_article_data(result, id, new_pub=True, selected=SelectionStage.SELECTED)
             return article_data
         
         match = re.search(r"cites=(\d+)", scholar_id)
@@ -95,7 +96,7 @@ def search_google_scholar(title: str) -> Optional[int]:
             print("No match found for", title)
             return None
         id = int(match.group(1))
-        article_data = get_article_data(result, id, new_pub=True, selected=True)
+        article_data = get_article_data(result, id, new_pub=True, selected=SelectionStage.SELECTED)
         return article_data
     
     except Exception as e:

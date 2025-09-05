@@ -6,7 +6,8 @@ import argparse
 
 from utils.db_management import (
     DBManager, 
-    initialize_db
+    initialize_db,
+    SelectionStage
 )
 
 with open("search_conf.json", "r") as f:
@@ -142,7 +143,7 @@ def filter_elements(db_manager: DBManager, iteration: int):
             updated_data.append((article.id, article.download_filtered_out, "download_filtered_out"))
         else:
             print("Selected")
-            article.selected = True
+            article.selected = SelectionStage.SELECTED
             updated_data.append((article.id, article.selected, "selected"))
 
     db_manager.update_batch_iteration_data(iteration, updated_data)

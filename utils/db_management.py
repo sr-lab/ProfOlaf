@@ -4,7 +4,16 @@ from collections import defaultdict
 from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
 
-def get_article_data(pub, pub_id, new_pub: bool = False, selected: bool = False):
+# Enum for the different selection stages of the process
+class SelectionStage(Enum):
+    NOT_SELECTED = 0
+    METADATA = 1
+    TITLE = 2
+    ABSTRACT_INTRO = 3
+    SELECTED = 4
+
+
+def get_article_data(pub, pub_id, new_pub: bool = False):
     """
     Get the article data from the pub.
     """
@@ -22,7 +31,7 @@ def get_article_data(pub, pub_id, new_pub: bool = False, selected: bool = False)
     pub_info["citedby_url"] = pub.get("citedby_url", "")
     pub_info["url_related_articles"] = pub.get("url_related_articles", "")
     pub_info["new_pub"] = new_pub
-    pub_info["selected"] = selected
+    pub_info["selected"] = SelectionStage.NOT_SELECTED
     return ArticleData(**pub_info)
 
 @dataclass

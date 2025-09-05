@@ -1,14 +1,17 @@
 import argparse
-from utils.db_management import initialize_db
+from utils.db_management import initialize_db, SelectionStage
 import json
 
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 def choose_elements(articles, db_manager, iteration):
+    """
+    Choose the elements by abstract and introduction.
+    """
     updated_data = []
     for i, article in enumerate(articles):
-        if article.abstract_filtered_out:
+        if article.selected >= SelectionStage.ABSTRACT_INTRO or article.abstract_filtered_out == True:
             continue
 
         title = article.title
@@ -24,12 +27,12 @@ def choose_elements(articles, db_manager, iteration):
 
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
+                article.selected = SelectionStage.ABSTRACT_INTRO
+                updated_data.append((article.id, article.selected, "selected"))
                 break
             elif user_input == 'n':
                 article.abstract_filtered_out = True
-                article.selected = False
                 updated_data.append((article.id, article.abstract_filtered_out, "abstract_filtered_out"))
-                updated_data.append((article.id, article.selected, "selected"))
                 break
             elif user_input == 's':
                 break

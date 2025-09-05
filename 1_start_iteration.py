@@ -10,7 +10,8 @@ from utils.proxy_generator import get_proxy
 from utils.db_management import (
     DBManager, 
     get_article_data,
-    initialize_db
+    initialize_db,
+    SelectionStage
 )
 
 load_dotenv()
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     db_manager = initialize_db(args.db_path, args.iteration)
     
-    initial_pubs = db_manager.get_iteration_data(args.iteration - 1, selected=True)
+    initial_pubs = db_manager.get_iteration_data(args.iteration - 1, selected=SelectionStage.NOT_SELECTED)
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()
