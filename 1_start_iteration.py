@@ -46,20 +46,22 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
         print("Cited by:", citedby, "Total Results:", pubs.total_results)
         sys.stdout.flush()
 
-        article_data = []
+        articles = []
 
         for pub in pubs:
+            if db_manager.get_seen_title(pub["bib"]["title"]) is None:
+                continue
             if "citedby_url" not in pub:
                 print("No citedby_url found for", pub["bib"]["title"], "replacing it with hashed title")
                 pub_id = hashlib.sha256(pub["bib"]["title"].encode()).hexdigest()
             else:
                 m = re.search("cites=[\d+,]*", pub["citedby_url"])
                 pub_id = m.group()[6:]
+            
+            articles.append(get_article_data(pub, pub_id, new_pub=True))
 
-            article_data.append(get_article_data(pub, pub_id, new_pub=True))
-
-        db_manager.insert_iteration_data(iteration, article_data)
-        db_manager.insert_seen_titles_data([(article_data.title, article_data.id) for article_data in article_data])
+        db_manager.insert_iteration_data(iteration, articles)
+        db_manager.insert_seen_titles_data([(article.title, article.id) for article in articles])
 
     db_manager.cursor.close()
     db_manager.conn.close()

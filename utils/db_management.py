@@ -3,6 +3,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
+from enum import Enum
 
 # Enum for the different selection stages of the process
 class SelectionStage(Enum):
@@ -220,6 +221,7 @@ class DBManager:
             # Convert integer IDs to strings to prevent overflow
             converted_data = []
             for i, (title, article_id) in enumerate(data):
+                title = title.lower()
                 if isinstance(article_id, int):
                     converted_data.append((title, str(article_id)))
                 else:
@@ -241,6 +243,16 @@ class DBManager:
         except Exception as e:
             self.conn.rollback()
             raise ValueError(f"Failed to get seen titles data: {e}")
+        
+    def get_seen_title(self, title: str):
+        table_name = "seen_titles"
+        title = title.lower()
+        try:
+            self.cursor.execute(f"SELECT * FROM {table_name} WHERE title = ?", (title,))
+            return self.cursor.fetchone()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to get seen title: {e}")
 
     # -------------------------- Conf Rank Table Methods --------------------------
 

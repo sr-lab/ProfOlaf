@@ -13,11 +13,37 @@ from utils.db_management import (
     initialize_db
 )
 from utils.proxy_generator import get_proxy
+import bibtexparser
 
 load_dotenv()
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 pg = get_proxy(search_conf["proxy_key"])
+
+
+def get_alternative_bibtexes(pub):
+    versions = scholarly.get_all_versions(pub.title)
+    for version in versions:
+        booktitle = version.get("booktitle", "")
+        journal = version.get("journal", "")
+        venue = version.get("venue", "")
+        final_venue = booktitle or journal or venue
+        if final_venue and "arxiv" not in final_venue.lower() \
+            and "corr" not in final_venue.lower():
+            return version.bibtex()
+    return ""
+
+def get_bibtex_venue(bibtex: str):
+    if bibtex != "":
+        library = bibtexparser.loads(article.bibtex)
+        if library.entries[0]["ENTRYTYPE"] in ["book", "phdthesis", "mastersthesis"]:
+            return ""
+        if "booktitle" in library.entries[0]:
+            return library.entries[0]["booktitle"]
+        elif "journal" in library.entries[0]:
+            return library.entries[0]["journal"]
+    
+    return ""
 
 def get_bibtex(iteration: int, article: ArticleData):
     """
@@ -26,9 +52,16 @@ def get_bibtex(iteration: int, article: ArticleData):
     current_wait_time = 30
     while True:
         try:
-            query = scholarly.search_pubs(article.title)
+            query = scholarly.search_single_pub(article.title)
             pub = next(query)
             bibtex = scholarly.bibtex(pub)
+            venue = get_bibtex_venue(bibtex)
+            if "arxiv" not in venue.lower():
+                continue
+            alternative_bibtex = get_alternative_bibtexes(pub)
+            if alternative_bibtex == "":
+                continue
+            bibtex = alternative_bibtex
         except Exception as e:
             print(e)
             print(f"Retrying {article}, waiting {current_wait_time}...", file=sys.stderr)
@@ -45,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
 
-    db_manager = initialize_db(args.db_path, args.iteration)
+    db_manager = DBManager(args.db_path)
     articles = db_manager.get_iteration_data(args.iteration)
     
     for article in articles:
