@@ -44,7 +44,7 @@ Enter the path to the final csv file: ./results/output.csv
   "db_path": "./data/database.db"
 }
 ```
-⚠️ **Note:**
+⚠️ **Notes:**
 - The proxy key is optional (you can skip it if not required)
 - Ensure that the initial file, DB path, and CSV path are accessible from your environment
 
@@ -180,7 +180,7 @@ get_iteration_data(iteration=ITERATION-1, selected=SelectionStage.NOT_SELECTED)
 - Uses **exponential backoff** (starts at 30s) on failures to reduce rate limiting
 - If a paper has no ```citedby_url```, falls back to a **SHA-256 hash of the title** as its ID
 
-**Notes**
+⚠️ **Notes:**
 
 - Seeds without a numeric citedby ID are skipped
 - Titles not present in ```seen_titles``` (per ```db_manager.get_seen_title(...)```) are skipped by this script
@@ -270,7 +270,7 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
 
 ---
 
-### Notes
+⚠️ **Notes:**
 
 - Books and theses are ignored for venue extraction (BibTeX entry types: `book`, `phdthesis`, `mastersthesis`).  
 - If a non-arXiv venue isn’t found, the script keeps retrying until it does (by design). You may wish to relax this if your corpus legitimately contains arXiv-only entries.
@@ -351,4 +351,227 @@ python 2_get_bibtex.py --iteration 1 --db_path ./data/database.db
 ### Implementation footnote (for maintainers)
 
 - `get_bibtex_venue(bibtex: str)` is intended to parse the **passed BibTeX string** with `bibtexparser.loads(bibtex)` and read `booktitle` / `journal`. If you see a reference to `article.bibtex` inside that function, adjust it to use the `bibtex` argument.
+
+---
+
+## Step 5 — Assign Venue Ranks (interactive)
+
+`3_generate_conf_rank.py` scans the **iteration N** articles’ BibTeX, extracts their venues (conference/journal), and lets you **assign a rank** to any venue that isn’t already in your DB. Results are written to the `conf_rank` table as you go.
+
+### What it does
+- Loads config from `search_conf.json` (DB path)
+- Reads all articles for the target iteration from the DB
+- Parses each article’s BibTeX and extracts:
+  - `booktitle` (conference proceedings), or
+  - `journal` (journal venue)
+- Skips BibTeX entries of type `book`, `phdthesis`, `mastersthesis`
+- Checks which venues are **not yet ranked** in the DB:
+  - If venue contains arXiv/SSRN, auto-assigns rank `NA`
+  - Otherwise, prompts you to select a rank and saves it
+
+💡 **Tip:** 
+
+- Run Step 4 (`2_get_bibtex.py`) first so venues can be read from BibTeX.
+
+---
+
+### Allowed ranks
+
+Choose one of:
+
+```css
+A*, A, B, C, D, Q1, Q2, Q3, Q4, NA
+```
+
+---
+
+### Requirements
+
+- Python 3.8+
+- Packages: `bibtexparser`
+- Local modules:
+  - `utils.db_management` (`ArticleData`, `initialize_db`)
+- Config: `search_conf.json` with `db_path`
+
+---
+
+### Usage
+
+Rank venues for **iteration 1**:
+```bash
+python 3_generate_conf_rank.py --iteration 1
+```
+
+Custom DB path:
+```bash
+python 3_generate_conf_rank.py --iteration 1 --db_path ./data/database.db
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration number (int)
+- `--db_path` *(optional)* Path to the SQLite DB (default: from `search_conf.json`)
+
+---
+
+### Example session
+
+```kotlin
+(1/5) IEEE Symposium on Example Security
+What is the rank of this venue? A
+
+(2/5) Journal of Hypothetical Research
+What is the rank of this venue? Q1
+
+(3/5) arXiv
+-> auto-assigned NA
+...
+```
+
+Each answer is **immediately stored**:
+
+- `db_manager.insert_conf_rank_data([(venue, rank)])`
+
+---
+
+### Input / Output
+
+**Input**
+- DB entries for **iteration N**, each with a **BibTeX** string (from Step 4)
+
+**Writes to DB**
+- Table with venue–rank pairs (queried via `db_manager.get_conf_rank_data()`)
+
+---
+
+### Troubleshooting
+
+- **No venues found** → Ensure Step 4 populated BibTeX for this iteration
+- **Invalid rank** → The script will reprompt until you enter a valid label
+- **arXiv/SSRN assigned as NA** → This is by design; override later by updating the DB if you need a different policy
+
+---
+
+### Pipeline context
+
+1. **Step 1:** Create `search_conf.json`
+2. **Step 2:** Seed iteration 0 (`0_generate_snowball_start.py`)
+3. **Step 3:** Expand citations (`1_start_iteration.py`)
+4. **Step 4:** Fetch BibTeX (`2_get_bibtex.py`)
+5. **Step 5 (this script):** `3_generate_conf_rank.py` — interactively rank venues for iteration *N*
+
+---
+
+## Step 6 — Filter by Metadata & Select
+
+`4_filter_by_metadata.py` reviews **iteration N** records and decides whether each paper is **selected** or **filtered out** based on venue/peer-review, year window, language, and download availability. It writes the results back to the DB in a single batch.
+
+### What it checks (in order)
+
+1. **Venue & peer-review**
+   - Parses the article’s **BibTeX** and extracts `booktitle` or `journal`
+   - Automatically rejects if the BibTeX `ENTRYTYPE` is `book`, `phdthesis`, or `mastersthesis`, or if venue is `NA`/missing
+   - Looks up the venue’s rank in the DB and compares it against `search_conf["venue_rank_list"]`
+   - If the venue isn’t known in the DB, it asks you: `Is the publication peer-reviewed and A or B or ... (y/n)`
+
+2. **Year window**
+   - Accepts if `pub_year` is between `search_conf["start_year"]` and `search_conf["end_year"]`
+   - If the year is unknown/non-numeric, it asks you to confirm
+
+3. **Language (English)**
+   - If the venue check already passed (peer-reviewed + ranked OK), it auto-assumes English
+   - Otherwise, it asks: `Is the publication in English (y/n)`
+
+4. **Download availability**
+   - Accepts if an `eprint_url` is present; else asks: `Is the publication available for download (y/n)`
+
+If all checks pass → **Selected**. Otherwise the first failing reason is recorded.
+
+---
+
+### DB writes
+
+For each article, one of the following fields is updated (via `update_batch_iteration_data`):
+
+| Outcome                   | Field set on the article                 |
+|---------------------------|------------------------------------------|
+| Venue/peer-review failed  | `venue_filtered_out = True`              |
+| Year outside window       | `year_filtered_out = True`               |
+| Not English               | `language_filtered_out = True`           |
+| No downloadable copy      | `download_filtered_out = True`           |
+| All checks passed         | `selected = SelectionStage.SELECTED`     |
+
+---
+
+### Requirements
+
+- Python 3.8+
+- Packages: `bibtexparser`
+- Local modules: `utils.db_management` (`DBManager`, `initialize_db`, `SelectionStage`)
+- Config: `search_conf.json` with `start_year`, `end_year`, `venue_rank_list`, `db_path`
+- **Before running:** make sure you’ve populated **BibTeX** (Step 4) and **venue ranks** (Step 5)
+
+---
+
+### Usage
+
+**Filter iteration 1:**
+```bash
+python 4_filter_by_metadata.py --iteration 1
+```
+Custom DB path:
+```bash
+python 4_filter_by_metadata.py --iteration 1 --db_path ./data/database.db
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration (int)
+- `--db_path` *(optional)* SQLite DB path (default: from `search_conf.json`)
+
+---
+
+### Example session
+
+```pgsql
+Element 3 out of 42
+ID: 123456
+Title: Cool Paper on X
+Venue: IEEE S&P
+Url: https://example.org/paper.pdf
+
+Is the publication peer-reviewed and A or B or Q1 (y/n): y
+Is the publication year between 2018 and 2024 (y/n): y
+
+Selected
+```
+
+---
+
+⚠️ **Notes & behavior details**
+
+- **Auto-logic shortcut:** If venue + rank already prove peer-review and the venue is in your allowed list (`venue_rank_list`), `check_english` returns `True` without aski_
+- **Unknown year:** You’re prompted to confirm it’s within the configured window
+- **Interactive prompts:** The script is designed to be conservative—if metadata is incomplete, it asks you rather than guessing
+
+---
+
+### Pipeline context
+
+1. **Step 1:** `generate_search_conf.py`
+2. **Step 2:** `0_generate_snowball_start.py`
+3. **Step 3:** `1_start_iteration.py`
+4. **Step 4:** `2_get_bibtex.py`
+5. **Step 5:** `3_generate_conf_rank.py`
+6. **Step 6 (this script):** `4_filter_by_metadata.py` — finalize selections for iteration *N* based on metadata checks
+
+
+
+
+
+
+
+
+  
+
+
+
 
