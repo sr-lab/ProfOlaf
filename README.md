@@ -44,9 +44,11 @@ Enter the path to the final csv file: ./results/output.csv
   "db_path": "./data/database.db"
 }
 ```
-⚠️ **Notes:**
-- The proxy key is optional (you can skip it if not required)
-- Ensure that the initial file, DB path, and CSV path are accessible from your environment
+
+> [!NOTE]  
+> The proxy key is optional (you can skip it if not required)
+> 
+> Ensure that the initial file, DB path, and CSV path are accessible from your environment
 
 ## Step 2 — Generate Snowball Starting Points
 
@@ -61,9 +63,10 @@ Enter the path to the final csv file: ./results/output.csv
 - Inserts results into the DB using `utils.db_management`:
   - `insert_iteration_data(initial_pubs)`
   - `insert_seen_titles_data(seen_titles)`
-- Respects a delay between requests to reduce rate limiting.
+- Respects a delay between requests to reduce rate limiting
 
-ℹ️ If Google Scholar doesn’t return a cited-by URL/ID, the script still stores the paper using an **MD5 of the title** as a fallback identifier.
+> [!IMPORTANT]
+> If Google Scholar doesn’t return a cited-by URL/ID, the script still stores the paper using an **MD5 of the title** as a fallback identifier.
 
 ---
 
@@ -180,10 +183,10 @@ get_iteration_data(iteration=ITERATION-1, selected=SelectionStage.NOT_SELECTED)
 - Uses **exponential backoff** (starts at 30s) on failures to reduce rate limiting
 - If a paper has no ```citedby_url```, falls back to a **SHA-256 hash of the title** as its ID
 
-⚠️ **Notes:**
-
-- Seeds without a numeric citedby ID are skipped
-- Titles not present in ```seen_titles``` (per ```db_manager.get_seen_title(...)```) are skipped by this script
+> [!NOTE]  
+> Seeds without a numeric citedby ID are skipped
+>
+>Titles not present in ```seen_titles``` (per ```db_manager.get_seen_title(...)```) are skipped by this script
   
 ---
 
@@ -270,10 +273,10 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
 
 ---
 
-⚠️ **Notes:**
-
-- Books and theses are ignored for venue extraction (BibTeX entry types: `book`, `phdthesis`, `mastersthesis`).  
-- If a non-arXiv venue isn’t found, the script keeps retrying until it does (by design). You may wish to relax this if your corpus legitimately contains arXiv-only entries.
+> [!NOTE]  
+> Books and theses are ignored for venue extraction (BibTeX entry types: `book`, `phdthesis`, `mastersthesis`).  
+>
+> If a non-arXiv venue isn’t found, the script keeps retrying until it does (by design). You may wish to relax this if your corpus legitimately contains arXiv-only entries.
 
 ---
 
@@ -369,9 +372,8 @@ python 2_get_bibtex.py --iteration 1 --db_path ./data/database.db
   - If venue contains arXiv/SSRN, auto-assigns rank `NA`
   - Otherwise, prompts you to select a rank and saves it
 
-💡 **Tip:** 
-
-- Run Step 4 (`2_get_bibtex.py`) first so venues can be read from BibTeX.
+> [!TIP] 
+> Run Step 4 (`2_get_bibtex.py`) first so venues can be read from BibTeX.
 
 ---
 
@@ -546,11 +548,12 @@ Selected
 
 ---
 
-⚠️ **Notes & behavior details**
-
-- **Auto-logic shortcut:** If venue + rank already prove peer-review and the venue is in your allowed list (`venue_rank_list`), `check_english` returns `True` without aski_
-- **Unknown year:** You’re prompted to confirm it’s within the configured window
-- **Interactive prompts:** The script is designed to be conservative—if metadata is incomplete, it asks you rather than guessing
+> [!NOTE]
+> **Auto-logic shortcut:** If venue + rank already prove peer-review and the venue is in your allowed list (`venue_rank_list`), `check_english` returns `True` without aski_
+>
+>**Unknown year:** You’re prompted to confirm it’s within the configured window
+>
+>**Interactive prompts:** The script is designed to be conservative—if metadata is incomplete, it asks you rather than guessing
 
 ---
 
