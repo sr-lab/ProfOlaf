@@ -8,27 +8,27 @@ from enum import Enum
 # Enum for the different selection stages of the process
 class SelectionStage(Enum):
     NOT_SELECTED = 0
-    METADATA = 1
-    TITLE = 2
-    ABSTRACT_INTRO = 3
-    SELECTED = 4
+    METADATA_APPROVED = 1
+    TITLE_APPROVED = 2
+    ABSTRACT_INTRO_APPROVED = 3
 
 
 def get_article_data(pub, pub_id, iteration: int, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
     """
     Get the article data from the pub.
     """
+    print(pub)
     pub_info = {}
     pub_info["id"] = pub_id
     pub_info["container_type"] = pub["container_type"]
-    pub_info["eprint_url"] = pub["eprint_url"]
-    pub_info["source"] = pub["source"]
-    pub_info["title"] = pub["bib"]["title"]
-    pub_info["authors"] = pub["bib"]["author"]
-    pub_info["venue"] = pub["bib"]["venue"]
-    pub_info["pub_year"] = "0" if not pub["bib"]["pub_year"].isdigit() else pub["bib"]["pub_year"]
-    pub_info["pub_url"] = pub["pub_url"]
-    pub_info["num_citations"] = pub["num_citations"]
+    pub_info["eprint_url"] = pub["pub_url"] if "eprint_url" not in pub else pub["eprint_url"]
+    pub_info["source"] = pub.get("source", "")
+    pub_info["title"] = pub.get("bib", {}).get("title", "")
+    pub_info["authors"] = pub.get("bib", {}).get("author", "")
+    pub_info["venue"] = pub.get("bib", {}).get("venue", "")
+    pub_info["pub_year"] = "0" if not pub.get("bib", {}).get("pub_year", "").isdigit() else pub.get("bib", {}).get("pub_year", "")
+    pub_info["pub_url"] = pub.get("pub_url", "")
+    pub_info["num_citations"] = pub.get("num_citations", 0)
     pub_info["citedby_url"] = pub.get("citedby_url", "")
     pub_info["url_related_articles"] = pub.get("url_related_articles", "")
     pub_info["new_pub"] = new_pub
@@ -61,6 +61,17 @@ class ArticleData:
     bibtex: str = ""
     iteration: int = 0
     dict = asdict
+    
+    def __hash__(self):
+        # Use id as the primary hash since it should be unique
+        return hash(self.id)
+    
+    def __eq__(self, other):
+        if not isinstance(other, ArticleData):
+            return False
+        return self.id == other.id
+
+
 
 class DBManager:
     SQL_TYPES = {
@@ -149,6 +160,7 @@ class DBManager:
                         values.append(value.value)
                     else:
                         values.append(value)
+                print(sql_query, values)
                 self.cursor.execute(sql_query, values)
             else:
                 self.cursor.execute(f"SELECT * FROM {table_name}")

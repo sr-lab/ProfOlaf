@@ -71,7 +71,7 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
-    parser.add_argument('--iteration', help='iteration number', type=int, default=0)
+    parser.add_argument('--iteration', help='iteration number', type=int, required=True)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])  
     args = parser.parse_args()
     db_manager = DBManager(args.db_path)

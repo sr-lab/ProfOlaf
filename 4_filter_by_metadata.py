@@ -143,7 +143,7 @@ def filter_elements(db_manager: DBManager, iteration: int):
             updated_data.append((article.id, article.download_filtered_out, "download_filtered_out"))
         else:
             print("Selected")
-            article.selected = SelectionStage.METADATA
+            article.selected = SelectionStage.METADATA_APPROVED
             updated_data.append((article.id, article.selected, "selected"))
         print("--------------------------------")
 

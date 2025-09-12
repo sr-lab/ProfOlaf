@@ -20,17 +20,21 @@ with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 pg = get_proxy(search_conf["proxy_key"])
 
+def check_valid_venue(venue: str):
+    return venue and "arxiv" not in venue.lower() \
+        and "corr" not in venue.lower() \
+        and "no title" not in venue.lower()
 
 def get_alternative_bibtexes(pub):
-    versions = scholarly.get_all_versions(pub["bib"]["title"])
+    versions = scholarly.get_all_versions(pub)
+    print("versions: ", len(versions), versions)
     for version in versions:
         booktitle = version.get("booktitle", "")
         journal = version.get("journal", "")
         venue = version.get("venue", "")
         final_venue = booktitle or journal or venue
-        if final_venue and "arxiv" not in final_venue.lower() \
-            and "corr" not in final_venue.lower():
-            return version.bibtex()
+        if check_valid_venue(final_venue):
+            return version
     return ""
 
 def get_bibtex_venue(bibtex: str):
@@ -82,4 +86,3 @@ if __name__ == "__main__":
     
     for article in articles:
         get_bibtex(args.iteration, article)
-        

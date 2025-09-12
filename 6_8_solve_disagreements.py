@@ -1,11 +1,11 @@
 import sys
 import argparse
 from enum import Enum
-from utils.db_management import initialize_db, SelectionStage
+from utils.db_management import DBManager, SelectionStage
 
 class DisagreementStage(Enum):
-    TITLE = SelectionStage.TITLE
-    ABSTRACT_INTRO = SelectionStage.ABSTRACT_INTRO
+    TITLE = SelectionStage.TITLE_APPROVED.value
+    ABSTRACT_INTRO = SelectionStage.ABSTRACT_INTRO_APPROVED.value
 
 def solve_disagreements(iteration, search_db_1, search_db_2, selection_stage: DisagreementStage):
     """
@@ -13,15 +13,14 @@ def solve_disagreements(iteration, search_db_1, search_db_2, selection_stage: Di
     """
 
     
-    db_manager_1 = initialize_db(search_db_1, iteration)
-    db_manager_2 = initialize_db(search_db_2, iteration)
+    db_manager_1 = DBManager(search_db_1)
+    db_manager_2 = DBManager(search_db_2)
 
     selected_pubs_rater1 = db_manager_1.get_iteration_data(iteration=iteration, selected=selection_stage)
     selected_pubs_rater2 = db_manager_2.get_iteration_data(iteration=iteration, selected=selection_stage)
     disagreements = set(selected_pubs_rater1) ^ set(selected_pubs_rater2)
     filtered = set(selected_pubs_rater1) & set(selected_pubs_rater2)
-    disagreements = sorted(list(disagreements))
-
+    
     for i, disagreement in enumerate(disagreements):
         print((f"({i + 1}/{len(disagreements)})"))
         if disagreement in selected_pubs_rater1:
@@ -37,8 +36,8 @@ def solve_disagreements(iteration, search_db_1, search_db_2, selection_stage: Di
         while True:
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
-                db_manager_1.update_iteration_data(iteration, disagreement.id, selected=selection_stage)
-                db_manager_2.update_iteration_data(iteration, disagreement.id, selected=selection_stage)
+                db_manager_1.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
+                db_manager_2.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
                 break
             elif user_input == 'n':
                 db_manager_1.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value-1)
@@ -64,5 +63,6 @@ if __name__ == "__main__":
     iteration = args.iteration
     search_db_1 = args.search_db_1
     search_db_2 = args.search_db_2
+    print(args.selection_stage)
     selection_stage = DisagreementStage[args.selection_stage]
     solve_disagreements(iteration, search_db_1, search_db_2, selection_stage)

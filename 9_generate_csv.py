@@ -3,7 +3,7 @@ import os
 import re
 import json
 import pandas as pd
-from utils.db_management import DBManager
+from utils.db_management import DBManager, SelectionStage
 from typing import List
 
 with open("search_conf.json", "r") as f:
@@ -16,7 +16,7 @@ def generate_csv(db_manager: DBManager, iterations: List[int], output_path: str)
     article_data = []
     for iteration in iterations:
         print("Iteration: ", iteration)
-        articles = db_manager.get_iteration_data(iteration=iteration, selected=True)
+        articles = db_manager.get_iteration_data(iteration=iteration, selected=SelectionStage.ABSTRACT_INTRO_APPROVED)
         print(articles)
         for article in articles:
             print(article.title)

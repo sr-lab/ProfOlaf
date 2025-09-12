@@ -1,5 +1,5 @@
 import argparse
-from utils.db_management import initialize_db, SelectionStage
+from utils.db_management import DBManager, SelectionStage
 import json
 
 with open("search_conf.json", "r") as f:
@@ -11,7 +11,7 @@ def choose_elements(articles, db_manager, iteration):
     """
     updated_data = []
     for i, article in enumerate(articles):
-        if article.selected >= SelectionStage.ABSTRACT_INTRO or article.abstract_filtered_out == True:
+        if article.selected >= SelectionStage.ABSTRACT_INTRO_APPROVED.value or article.abstract_filtered_out == True:
             continue
 
         title = article.title
@@ -27,7 +27,7 @@ def choose_elements(articles, db_manager, iteration):
 
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
-                article.selected = SelectionStage.ABSTRACT_INTRO
+                article.selected = SelectionStage.ABSTRACT_INTRO_APPROVED   
                 updated_data.append((article.id, article.selected, "selected"))
                 break
             elif user_input == 'n':
@@ -43,13 +43,13 @@ def choose_elements(articles, db_manager, iteration):
 
 
 def main(iteration, db_path):
-    db_manager = initialize_db(db_path, iteration)
-    articles = db_manager.get_iteration_data(iteration=iteration, selected=True)
+    db_manager = DBManager(db_path)
+    articles = db_manager.get_iteration_data(iteration=iteration, selected=SelectionStage.TITLE_APPROVED)
     choose_elements(articles, db_manager, iteration)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by title')
-    parser.add_argument('--iteration', help='iteration number', type=int)
+    parser.add_argument('--iteration', help='iteration number', type=int, required=True)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
     main(args.iteration, args.db_path)
