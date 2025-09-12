@@ -79,16 +79,16 @@ def search_google_scholar(title: str, iteration: int) -> Optional[int]:
         The Google Scholar ID if found, None otherwise
     """
     try:
-        search_query = scholarly.search_pubs(title)
-        result = next(search_query, None)
+        result = scholarly.search_single_pub(title)
+
         if result is None:
             return None
-        
+
         scholar_id = result.get('citedby_url')
         if scholar_id is None:
             print("No scholar_id found for", title)
             id = hashlib.md5(title.encode('utf-8')).hexdigest()
-            article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.SELECTED)
+            article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.NOT_SELECTED)
             return article_data
         
         match = re.search(r"cites=(\d+)", scholar_id)
@@ -96,7 +96,7 @@ def search_google_scholar(title: str, iteration: int) -> Optional[int]:
             print("No match found for", title)
             return None
         id = int(match.group(1))
-        article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.SELECTED)
+        article_data = get_article_data(result, id, iteration, new_pub=True, selected=SelectionStage.NOT_SELECTED)
         return article_data
     
     except Exception as e:
@@ -133,7 +133,6 @@ def generate_snowball_start(input_file: str, iteration: str, delay: float = 2.0,
     
     for i, title in tqdm(enumerate(titles, 1), total=len(titles), desc="Searching for Google Scholar IDs"):      
         article_data = search_google_scholar(title, iteration)
-        
         if article_data:
             initial_pubs.append(article_data)
             seen_titles.append((title, article_data.id))
@@ -153,7 +152,7 @@ def main():
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
 
-    db_manager = initialize_db(args.db_path, ITERATION_0)
+    db_manager = initialize_db(args.db_path)
     generate_snowball_start(args.input_file, ITERATION_0, args.delay, db_manager)
 
 

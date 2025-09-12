@@ -22,7 +22,7 @@ pg = get_proxy(search_conf["proxy_key"])
 
 
 def get_alternative_bibtexes(pub):
-    versions = scholarly.get_all_versions(pub.title)
+    versions = scholarly.get_all_versions(pub["bib"]["title"])
     for version in versions:
         booktitle = version.get("booktitle", "")
         journal = version.get("journal", "")
@@ -35,7 +35,7 @@ def get_alternative_bibtexes(pub):
 
 def get_bibtex_venue(bibtex: str):
     if bibtex != "":
-        library = bibtexparser.loads(article.bibtex)
+        library = bibtexparser.loads(bibtex)
         if library.entries[0]["ENTRYTYPE"] in ["book", "phdthesis", "mastersthesis"]:
             return ""
         if "booktitle" in library.entries[0]:
@@ -50,18 +50,16 @@ def get_bibtex(iteration: int, article: ArticleData):
     Get the bibtex string for the given article.
     """
     current_wait_time = 30
+    print(article.title)
     while True:
         try:
-            query = scholarly.search_single_pub(article.title)
-            pub = next(query)
+            pub = scholarly.search_single_pub(article.title)
             bibtex = scholarly.bibtex(pub)
             venue = get_bibtex_venue(bibtex)
-            if "arxiv" not in venue.lower():
-                continue
-            alternative_bibtex = get_alternative_bibtexes(pub)
-            if alternative_bibtex == "":
-                continue
-            bibtex = alternative_bibtex
+            alternative_bibtex = ""
+            if "arxiv" in venue.lower():
+                alternative_bibtex = get_alternative_bibtexes(pub)
+            bibtex = alternative_bibtex if alternative_bibtex != "" else bibtex
         except Exception as e:
             print(e)
             print(f"Retrying {article}, waiting {current_wait_time}...", file=sys.stderr)
@@ -69,6 +67,7 @@ def get_bibtex(iteration: int, article: ArticleData):
             time.sleep(current_wait_time)
             current_wait_time *= 2
             continue
+        print("bibtex found")
         break
     db_manager.update_iteration_data(iteration, article.id, bibtex=bibtex)
 

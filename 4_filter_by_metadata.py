@@ -117,7 +117,7 @@ def filter_elements(db_manager: DBManager, iteration: int):
     
     updated_data = []
     for i, article in enumerate(article_data):
-        print()
+        print("\n--------------------------------")
         print(f"Element {i+1} out of {len(article_data)}")
         print(f"ID: {article.id}")
         print(f"Title: {article.title}")
@@ -143,18 +143,21 @@ def filter_elements(db_manager: DBManager, iteration: int):
             updated_data.append((article.id, article.download_filtered_out, "download_filtered_out"))
         else:
             print("Selected")
-            article.selected = SelectionStage.SELECTED
+            article.selected = SelectionStage.METADATA
             updated_data.append((article.id, article.selected, "selected"))
+        print("--------------------------------")
+
 
     db_manager.update_batch_iteration_data(iteration, updated_data)
+    
 
 def main(iteration, db_path):
-    db_manager = initialize_db(db_path, iteration)
+    db_manager = DBManager(db_path)
     filter_elements(db_manager, iteration)
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by metadata')
-    parser.add_argument('--iteration', help='iteration number', type=int)
+    parser.add_argument('--iteration', help='iteration number', type=int, required=True)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     args = parser.parse_args()
     main(args.iteration, args.db_path)

@@ -49,7 +49,8 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
         articles = []
 
         for pub in pubs:
-            if db_manager.get_seen_title(pub["bib"]["title"]) is None:
+            if db_manager.get_seen_title(pub["bib"]["title"]) is not None:
+                print("Seen title found for", pub["bib"]["title"])
                 continue
             if "citedby_url" not in pub:
                 print("No citedby_url found for", pub["bib"]["title"], "replacing it with hashed title")
@@ -59,6 +60,8 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
                 pub_id = m.group()[6:]
             
             articles.append(get_article_data(pub, pub_id, iteration, new_pub=True))
+
+        print("Articles: ", len(articles))
 
         db_manager.insert_iteration_data(articles)
         db_manager.insert_seen_titles_data([(article.title, article.id) for article in articles])
@@ -71,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument('--iteration', help='iteration number', type=int, default=0)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])  
     args = parser.parse_args()
-    db_manager = initialize_db(args.db_path, args.iteration)
+    db_manager = DBManager(args.db_path)
     
     initial_pubs = db_manager.get_iteration_data(iteration=args.iteration - 1, selected=SelectionStage.NOT_SELECTED)
     

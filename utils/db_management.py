@@ -14,7 +14,7 @@ class SelectionStage(Enum):
     SELECTED = 4
 
 
-def get_article_data(pub, pub_id, iteration: int, new_pub: bool = False):
+def get_article_data(pub, pub_id, iteration: int, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
     """
     Get the article data from the pub.
     """
@@ -32,7 +32,7 @@ def get_article_data(pub, pub_id, iteration: int, new_pub: bool = False):
     pub_info["citedby_url"] = pub.get("citedby_url", "")
     pub_info["url_related_articles"] = pub.get("url_related_articles", "")
     pub_info["new_pub"] = new_pub
-    pub_info["selected"] = SelectionStage.NOT_SELECTED
+    pub_info["selected"] = selected
     pub_info["iteration"] = iteration
     return ArticleData(**pub_info)
 
@@ -75,7 +75,7 @@ class DBManager:
 
     # -------------------------- Iteration Table Methods --------------------------
 
-    def create_iterations(self):
+    def create_iterations_table(self):
         # create a table for the iteration if it doesn't exist
         table_name = "iterations"
         try:
@@ -110,8 +110,8 @@ class DBManager:
     def insert_iteration_data(self, data: List[ArticleData]):
         table_name = "iterations"
         try:
+            
             data_dicts = [data_element.__dict__ for data_element in data]
-        
             for i, data_dict in enumerate(data_dicts):
                 for key, value in data_dict.items():
                     if hasattr(value, 'value'):  # Handle enum values
@@ -122,7 +122,7 @@ class DBManager:
                         data_dict[key] = ""
                     elif isinstance(value, int) and key in ['id', 'pub_year', 'num_citations']:  # Convert large integers to strings
                         data_dict[key] = str(value)
-            
+
             columns = ', '.join(data_dicts[0].keys())
             placeholders = ', '.join(['?'] * len(data_dicts[0]))
             sql_query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
@@ -139,17 +139,23 @@ class DBManager:
         try:
             self.conn.row_factory = sqlite3.Row
             if kwargs:
-                columns = ', '.join(kwargs.keys())
-                placeholders = ', '.join(['?'] * len(kwargs))
-                sql_query = f"SELECT * FROM {table_name} WHERE {columns} = {placeholders}"
-                self.cursor.execute(sql_query, [kwargs[key] for key in kwargs])
+                conditions = ' AND '.join([f"{key} = ?" for key in kwargs.keys()])
+                sql_query = f"SELECT * FROM {table_name} WHERE {conditions}"
+                # Convert enum values to their underlying values for SQLite
+                values = []
+                for key in kwargs:
+                    value = kwargs[key]
+                    if hasattr(value, 'value'):  # Check if it's an enum
+                        values.append(value.value)
+                    else:
+                        values.append(value)
+                self.cursor.execute(sql_query, values)
             else:
                 self.cursor.execute(f"SELECT * FROM {table_name}")
             
             rows = self.cursor.fetchall()
             dict_list = []
             for row in rows:
-                # Access row data directly using column names and indices
                 row_dict = {}
                 for i, field in enumerate(fields(ArticleData)):
                     if i < len(row):
@@ -158,6 +164,7 @@ class DBManager:
             
             return dict_list
         except Exception as e:
+            print("Error getting iteration data: ", e)
             self.conn.rollback()
             raise ValueError(f"Failed to get iteration data: {e}")
         finally:
@@ -184,12 +191,22 @@ class DBManager:
             self.conn.rollback()
             raise ValueError(f"Failed to update iteration data: {e}")
 
-    def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, str, str]]):
+    def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, any, str]]):
         table_name = "iterations"
         try:
             updates_by_column = defaultdict(list)
             for article_id, new_value, column_name in update_data:
-                updates_by_column[column_name].append((new_value, article_id, iteration))
+                # Convert values to appropriate types for SQLite
+                if new_value is None:
+                    sql_value = None
+                elif isinstance(new_value, bool):
+                    sql_value = int(new_value)  # Convert bool to int for SQLite
+                elif hasattr(new_value, 'value'):  # Handle Enum values
+                    sql_value = new_value.value  # Get the underlying value (e.g., 4 for SELECTED)
+                else:
+                    sql_value = str(new_value)  # Convert everything else to string
+                
+                updates_by_column[column_name].append((sql_value, article_id, iteration))
             
             for column_name, column_updates in updates_by_column.items():
                 query = f"UPDATE {table_name} SET {column_name} = ? WHERE id = ? and iteration = ?"
@@ -299,9 +316,9 @@ class DBManager:
             raise ValueError(f"Failed to get venue rank data: {e}")
 
 
-def initialize_db(db_path: str, iteration: int):
+def initialize_db(db_path: str):
     db_manager = DBManager(db_path)
-    db_manager.create_iteration_table(iteration)
+    db_manager.create_iterations_table()
     db_manager.create_seen_titles_table()
     db_manager.create_conf_rank_table()
     return db_manager
