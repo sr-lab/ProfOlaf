@@ -1,7 +1,7 @@
 The **ProfOlaf** tool was built to help researchers with literature **snowballing**. It lets you define a reusable search configuration (time window, source/venue filters, paths, optional proxy). It ingests seed titles from structured or plain-text inputs, queries scholarly sources, and normalizes records.
 It stores initial results and “seen” items in your data store, with progress reporting and request throttling to minimize rate limits.
 
-## Step 1 - Generating the Search Configuration
+## Step 0 - Generating the Search Configuration
 
 **`generate_search_conf.py`** is used to interactively create a `search_conf.json` file that stores all configuration parameters needed for scraping and data collection.
 
@@ -50,7 +50,7 @@ Enter the path to the final csv file: ./results/output.csv
 > 
 > Ensure that the initial file, DB path, and CSV path are accessible from your environment
 
-## Step 2 — Generate Snowball Starting Points
+## Step 1 — Generate Snowball Starting Points
 
 **`0_generate_snowball_start.py`** reads paper titles from a file, looks them up on Google Scholar (via the `scholarly` library), and writes the resulting initial publications and seen titles into your database for iteration 0 of the snowballing process.
 
@@ -162,7 +162,7 @@ python 0_generate_snowball_start.py \
 3. **Next:** Continue with your snowballing/expansion scripts using the stored iteration 0 results
 
 
-## Step 3 — Expand Citations for Iteration *N*
+## Step 2 — Expand Citations for Iteration *N*
 
 `1_start_iteration.py` takes the seed publications from the **previous iteration** and expands them by fetching their **citing papers** from Google Scholar (via `scholarly`). The new papers are stored in the DB as the results of the current iteration.
 
@@ -254,7 +254,7 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
 3. **Step 3 (this script):** `1_start_iteration.py` → expand citations for iteration *N* using seeds from *N-1*  
 4. **Next:** Repeat for subsequent iterations or run your filtering/selection stages
 
-## Step 4 — Fetch BibTeX for Iteration *N*
+## Step 3 — Fetch BibTeX for Iteration *N*
 
 `2_get_bibtex.py` enriches the papers in **iteration N** by fetching their **BibTeX** from Google Scholar (via `scholarly`) and updating your database.
 
@@ -357,7 +357,7 @@ python 2_get_bibtex.py --iteration 1 --db_path ./data/database.db
 
 ---
 
-## Step 5 — Assign Venue Ranks (interactive)
+## Step 4 — Assign Venue Ranks (interactive)
 
 `3_generate_conf_rank.py` scans the **iteration N** articles’ BibTeX, extracts their venues (conference/journal), and lets you **assign a rank** to any venue that isn’t already in your DB. Results are written to the `conf_rank` table as you go.
 
@@ -463,7 +463,7 @@ Each answer is **immediately stored**:
 
 ---
 
-## Step 6 — Filter by Metadata & Select
+## Step 5 — Filter by Metadata & Select
 
 `4_filter_by_metadata.py` reviews **iteration N** records and decides whether each paper is **selected** or **filtered out** based on venue/peer-review, year window, language, and download availability. It writes the results back to the DB in a single batch.
 
