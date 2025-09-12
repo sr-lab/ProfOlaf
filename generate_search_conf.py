@@ -65,7 +65,8 @@ def generate_search_conf():
         "venue_rank_list": venue_list,
         "proxy_key": proxy_key,
         "initial_file": initial_file,
-        "db_path": db_path
+        "db_path": db_path,
+        "csv_path": csv_path
     }
 
 
