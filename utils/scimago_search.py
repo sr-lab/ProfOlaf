@@ -4,7 +4,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from urllib.parse import quote_plus, urljoin, urlparse, parse_qs
 import requests
 from bs4 import BeautifulSoup
-from conference_similarity_search import VenueMatch, similarity_score
+from utils.conference_similarity_search import VenueMatch, similarity_score
 SCIMAGO_BASE_URL = "https://www.scimagojr.com/"
 
 @dataclass
@@ -139,7 +139,7 @@ def parse_categories_quartile(html_text: str) -> Dict[str, Dict[str, Any]]:
         return data
     
 
-def find_scimago_rank(venue: str, min_similarity: float = 0.5):
+def find_scimago_rank(venue: str, session: Optional[requests.Session] = None, min_similarity: float = 0.5):
     """
     Find the rank of the venue from Scimago.
     """

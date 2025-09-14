@@ -1,5 +1,4 @@
 import sys, re, os, json, csv, html, difflib
-
 import bibtexparser
 import argparse
 from typing import List, Set, Dict, Tuple
@@ -10,21 +9,79 @@ from utils.db_management import (
     DBManager
 )
 
+from utils.scimago_search import find_scimago_rank
+from utils.core_table_search import search_core_table, load_core_table
+
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
+def search_rank_databases(venue: str):
+    print("Ranking Databases available:")
+    print("1. Scimago")
+    print("2. Core Table")
+    while True:
+        choice = input("Choose the database to search (1/2): ")
+        if choice == "1":
+            return _get_scimago_rank(venue)
+        elif choice == "2":
+            candidates = search_core_table(venue, load_core_table("ranking_tables/core_table1.csv"))
+            print("Core Table Candidates:")
+            i = 1
+            for candidate in candidates:
+                print(f"{i}. {candidate[0]} (Rank: {candidate[2]})")
+                i += 1
+            choice = input("Choose the correct venue from the candidates (press 0 to go back to manual input): ")
+            if choice == "0":
+                return None, None, None
+            else:
+                return candidates[choice-1]
+        else:
+            print("Invalid choice. Please try again.")
+
+def _get_scimago_rank(venue: str):
+    while True:
+        venue_name = input(f"Enter the name of the venue (leave it blank to use {venue} or 'q' to quit): ")
+        if venue_name == "q":
+            return None, None, None
+        if venue_name == "":
+            venue_name = venue
+        venue_name = venue_name.lower()
+        try:
+            best, rank, categories = find_scimago_rank(venue_name)
+
+            confirm = input(f"Is this the correct venue? ({rank.title}, {rank.quartile}, {rank.url}) (y/n) ")
+            if confirm == "y":
+                return (rank.title, 1.0, rank.quartile)
+            else:
+                continue
+        except Exception as e:
+            print(f"Error searching scimago for {venue_name}: {e}")
+            continue
+
+
+
+def get_rank_manually(venue: str):
+    while True:
+        rank = input(f"What is the rank of {venue}? ")
+        if rank not in ["A*", "A", "B", "C", "D", "Q1", "Q2", "Q3", "Q4", "NA"]:
+            print("Invalid rank.")
+            continue
+        return rank
+
 def input_venue_rank(venue: str):
-    # FIXME: Add Scimago and Core Table search
     """
     Input the rank of the venue.
     """
     while True:
-        rank = input(f"What is the rank of this venue? ")
-        if rank not in ["A*", "A", "B", "C", "D", "Q1", "Q2", "Q3", "Q4", "NA"]:
-            print("Invalid rank.")
+        if input(f"Search for {venue} in Scimago or Core Table? (y/n) ") == "y":
+            venue, score, rank = search_rank_databases(venue)
+            return rank
         else:
-            break
-    return rank
+            rank = get_rank_manually(venue)
+            return rank
+    
+print(input_venue_rank("European Journal for Philosophy of Science"))
+
 
 def get_venues(articles: List[ArticleData]):
     """
@@ -91,10 +148,11 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
     """
     Get the unindexed venues.
     """
+    # Check if venue is arxiv, ssrn or corr is the venue
     unindexed_venues = []
     for i, venue in enumerate(venues):
         if venue.lower() not in [k.lower() for k in conf_rank.keys()]:
-            if "arXiv" in venue or "arxiv" in venue or "SSRN" in venue:
+            if "arxiv" in venue.lower() or "ssrn" in venue.lower() or 'corr' in venue.lower():
                 rank = "NA"
                 conf_rank[venue] = rank
                 db_manager.insert_conf_rank_data([(venue, rank)])

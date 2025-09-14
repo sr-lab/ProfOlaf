@@ -37,7 +37,7 @@ def extract_titles_from_file(file_path: str) -> List[str]:
     Extract titles from a file. The file should be a text file with one title per line.
     """
     with open(file_path, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f.readlines()]
+        return [line.strip() for line in f.readlines() if line.strip()]
     
 def extract_titles_from_json(json_file_path: str) -> List[str]:
     """
