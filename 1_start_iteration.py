@@ -10,8 +10,11 @@ from utils.proxy_generator import get_proxy
 from utils.db_management import (
     DBManager, 
     get_article_data,
-    initialize_db,
     SelectionStage
+)
+from utils.article_search_method import (
+    ArticleSearch, 
+    GoogleScholarSearchMethod, 
 )
 
 load_dotenv()
@@ -20,7 +23,7 @@ with open("search_conf.json", "r") as f:
 
 pg = get_proxy(search_conf["proxy_key"])
 
-def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
+def get_articles(iteration: int, initial_pubs, db_manager: DBManager, article_search: ArticleSearch):
     """
     Get articles that cite the pubs for the given iteration.
     """
@@ -29,25 +32,11 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
         citedby = initial_pubs.pop().id
         if not str(citedby).isdigit():
             continue
-        while True:
-            try:
-                pubs = scholarly.search_citedby(int(citedby))
-                print("pubs", pubs)
-            except Exception as e:
-                print(e)
-                print(f"Retrying {citedby}, waiting {current_wait_time}...", file=sys.stderr)
-                sys.stdout.flush()
-                time.sleep(current_wait_time)
-                current_wait_time *= 2
-                continue
-            break
-        if pubs.total_results == 0:
-            print("No citations found for", citedby)
-        print("Cited by:", citedby, "Total Results:", pubs.total_results)
+        pubs = article_search.get_citedby(citedby)
+        print("Pubs: ", len(pubs))
         sys.stdout.flush()
 
         articles = []
-
         for pub in pubs:
             if db_manager.get_seen_title(pub["bib"]["title"]) is not None:
                 print("Seen title found for", pub["bib"]["title"])
@@ -60,12 +49,13 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager):
                 pub_id = m.group()[6:]
             
             articles.append(get_article_data(pub, pub_id, iteration, new_pub=True))
+            sys.stdout.flush()
 
         print("Articles: ", len(articles))
 
         db_manager.insert_iteration_data(articles)
         db_manager.insert_seen_titles_data([(article.title, article.id) for article in articles])
-
+    sys.stdout.flush()
     db_manager.cursor.close()
     db_manager.conn.close()
     
@@ -80,5 +70,5 @@ if __name__ == "__main__":
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()
-    
-    get_articles(args.iteration, initial_pubs, db_manager)
+    article_search = ArticleSearch(GoogleScholarSearchMethod())
+    get_articles(args.iteration, initial_pubs, db_manager, article_search)
