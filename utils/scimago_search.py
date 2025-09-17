@@ -130,6 +130,8 @@ def parse_categories_quartile(html_text: str) -> Dict[str, Dict[str, Any]]:
                     bucket = data.setdefault(category, {"entries": []})
                     bucket["entries"].append(entry)
         order = {"Q1":1,"Q2":2,"Q3":3,"Q4":4}
+        if data is None:
+            return {}
         for cat, bucket in data.items():
             entries = sorted(bucket["entries"], key=lambda e: e["year"])
             bucket["entries"] = entries
@@ -159,6 +161,8 @@ def find_scimago_rank(venue: str, session: Optional[requests.Session] = None, mi
     categories = parse_categories_quartile(r.text)
 
     current_year = rank.sjr_year
+    if categories is None:
+        return best, rank, {}
     if current_year is not None:
         for category, bucket in categories.items():
             if not bucket.get("entries"):

@@ -2,43 +2,27 @@ import sys, re, os, json, csv, html, difflib
 import bibtexparser
 import argparse
 from typing import List, Set, Dict, Tuple
+from itertools import zip_longest
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+
+from tabulate import tabulate
+
 from utils.db_management import (
     ArticleData,
     DBManager
 )
-
 from utils.scimago_search import find_scimago_rank
 from utils.core_table_search import search_core_table, load_core_table
+
 
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
-def search_rank_databases(venue: str):
-    print("Ranking Databases available:")
-    print("1. Scimago")
-    print("2. Core Table")
-    while True:
-        choice = input("Choose the database to search (1/2): ")
-        if choice == "1":
-            return _get_scimago_rank(venue)
-        elif choice == "2":
-            candidates = search_core_table(venue, load_core_table("ranking_tables/core_table1.csv"))
-            print("Core Table Candidates:")
-            i = 1
-            for candidate in candidates:
-                print(f"{i}. {candidate[0]} (Rank: {candidate[2]})")
-                i += 1
-            choice = input("Choose the correct venue from the candidates (press 0 to go back to manual input): ")
-            if choice == "0":
-                return None, None, None
-            else:
-                return candidates[choice-1]
-        else:
-            print("Invalid choice. Please try again.")
 
-def _get_scimago_rank(venue: str):
+def _get_scimago_rank(venue: str, as_string: bool = False):
     while True:
         venue_name = input(f"Enter the name of the venue (leave it blank to use {venue} or 'q' to quit): ")
         if venue_name == "q":
@@ -48,40 +32,56 @@ def _get_scimago_rank(venue: str):
         venue_name = venue_name.lower()
         try:
             best, rank, categories = find_scimago_rank(venue_name)
-
-            confirm = input(f"Is this the correct venue? ({rank.title}, {rank.quartile}, {rank.url}) (y/n) ")
-            if confirm == "y":
-                return (rank.title, 1.0, rank.quartile)
+            if as_string:
+                string = f"'{best.title}' ({best.similarity_score})\n\nCategories:\n"
+                for category, bucket in categories.items():
+                    string += f"  {category}: {bucket['current']['quartile']}\n"
+                return string
             else:
-                continue
+                return best, rank, categories
         except Exception as e:
             print(f"Error searching scimago for {venue_name}: {e}")
             continue
 
 
+def _get_core_rank(venue: str, as_string: bool = False):
+    core_rank = search_core_table(venue, load_core_table("ranking_tables/core_table2.csv"), top_k=1)
+    best = core_rank[0]
+    if as_string:
+        best.similarity_score = round(best.similarity_score, 2)
+        string = f"'{best.title}' ({best.similarity_score})\n\n"
+        string += f"Core Rank: {best.rank}\n"
+        return string
+    else:
+        return best, best.rank
 
-def get_rank_manually(venue: str):
+def search_rank_databases(venue: str):
     while True:
-        rank = input(f"What is the rank of {venue}? ")
-        if rank not in ["A*", "A", "B", "C", "D", "Q1", "Q2", "Q3", "Q4", "NA"]:
-            print("Invalid rank.")
-            continue
-        return rank
+        scimago_rank = _get_scimago_rank(venue, as_string=True)
+        core_rank = _get_core_rank(venue, as_string=True)
+        table = tabulate(
+            [(scimago_rank, core_rank)], 
+            headers=["Scimago", "Core Table"], 
+            tablefmt="grid",
+            stralign="left",
+            colalign=("left", "left"),
+            disable_numparse=True,
+            maxcolwidths=[None, None]
+        )
+        print(table)
 
-def input_venue_rank(venue: str):
-    """
-    Input the rank of the venue.
-    """
-    while True:
-        if input(f"Search for {venue} in Scimago or Core Table? (y/n) ") == "y":
-            venue, score, rank = search_rank_databases(venue)
-            return rank
+        while True:
+            final_rank = input("Enter the rank for the venue (leave it blank to go back to manual input): ")
+            if final_rank and final_rank in search_conf["venue_rank_list"]:
+                break
+            else:
+                print("Invalid rank.")
+                continue
+        if final_rank:
+            return final_rank
         else:
-            rank = get_rank_manually(venue)
-            return rank
-    
-print(input_venue_rank("European Journal for Philosophy of Science"))
-
+            return None
+        
 
 def get_venues(articles: List[ArticleData]):
     """
@@ -122,27 +122,21 @@ def find_similar_venues(venue: str, existing_venues: Set[str], threshold: float 
 
 def prompt_similar_venues(venue: str, similar_venues: List[Tuple[str, float]], conf_rank: Dict[str, str]) -> str:
     print(f"\nFound {len(similar_venues)} similar venues to '{venue}':")
-    print(similar_venues)
-    for i, (similar_venue, sim) in enumerate(similar_venues, 1):
-        print(f"{i}. {similar_venue} (Similarity: {sim:.3f})")
-    print("\nOptions:")
-    print("0. None of these - enter new rank")
-    for i in range(len(similar_venues)):
-        print(f"{i + 1}. {similar_venues[i][0]}")
-    while True:
+    table = tabulate(similar_venues, headers=["Venue", "Similarity"], tablefmt="grid", stralign="left", colalign=("left", "left"), disable_numparse=True, maxcolwidths=[None, None])
+    print(table)
+    rank = None
+    while rank is None:
         try:
-            choice = int(input("Choose an option: "))
-            if 0 <= choice <= len(similar_venues):
-                break
-            else:
-                print("Invalid choice. Please try again.")
+            rank = int(input("Enter the rank for the venue: "))
+            if rank == "":
+                rank = None
         except ValueError:
             print("Invalid input. Please enter a number.")
     
-    if choice == 0:
+    if rank == "":
         return None
     else:
-        return conf_rank[similar_venues[choice-1][0]]
+        return rank
     
 def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
     """
@@ -164,10 +158,10 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
         similar_venues = find_similar_venues(venue, conf_rank.keys())
         if similar_venues:
             rank = prompt_similar_venues(venue, similar_venues, conf_rank)
-            if rank is None:
-                rank = input_venue_rank(venue)
+            while rank is None:
+                rank = search_rank_databases(venue)
         else:
-            rank = input_venue_rank(venue)
+            rank = search_rank_databases(venue)
         conf_rank[venue] = rank
         db_manager.insert_conf_rank_data([(venue, rank)])
 

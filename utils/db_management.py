@@ -13,15 +13,14 @@ class SelectionStage(Enum):
     ABSTRACT_INTRO_APPROVED = 3
 
 
-def get_article_data(pub, pub_id, iteration: int, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
+def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
     """
     Get the article data from the pub.
     """
-    print(pub)
     pub_info = {}
     pub_info["id"] = pub_id
     pub_info["container_type"] = pub["container_type"]
-    pub_info["eprint_url"] = pub["pub_url"] if "eprint_url" not in pub else pub["eprint_url"]
+    pub_info["eprint_url"] = pub.get("pub_url", "") if "eprint_url" not in pub else pub["eprint_url"]
     pub_info["source"] = pub.get("source", "")
     pub_info["title"] = pub.get("bib", {}).get("title", "")
     pub_info["authors"] = pub.get("bib", {}).get("author", "")
@@ -61,6 +60,13 @@ class ArticleData:
     bibtex: str = ""
     iteration: int = 0
     dict = asdict
+
+    def set_iteration(self, iteration: int):
+        self.iteration = iteration
+    def set_selected(self, selected: SelectionStage):
+        self.selected = selected
+    def set_bibtex(self, bibtex: str):
+        self.bibtex = bibtex
     
     def __hash__(self):
         # Use id as the primary hash since it should be unique
@@ -120,6 +126,8 @@ class DBManager:
         
     def insert_iteration_data(self, data: List[ArticleData]):
         table_name = "iterations"
+        if len(data) == 0:
+            return
         try:
             
             data_dicts = [data_element.__dict__ for data_element in data]
@@ -145,21 +153,77 @@ class DBManager:
             raise ValueError(f"Could not add elements to table: {e}")
         
     def get_iteration_data(self, **kwargs):
-        """Get iteration data as dictionaries with field names as keys."""
+        """
+        Get iteration data as dictionaries with field names as keys.
+        
+        Supports flexible querying with different operators:
+        - Simple equality: field=value
+        - Not equal: field__ne=value
+        - Not empty: field__not_empty=True
+        - Empty: field__empty=True
+        - Greater than: field__gt=value
+        - Less than: field__lt=value
+        - Greater or equal: field__gte=value
+        - Less or equal: field__lte=value
+        - Like: field__like=pattern
+        - In: field__in=[value1, value2, ...]
+        - Not in: field__nin=[value1, value2, ...]
+        
+        Examples:
+        - get_iteration_data(iteration=1)  # iteration = 1
+        - get_iteration_data(bibtex__not_empty=True)  # bibtex != ""
+        - get_iteration_data(title__ne="")  # title != ""
+        - get_iteration_data(iteration__gt=0)  # iteration > 0
+        """
         table_name = "iterations"
         try:
             self.conn.row_factory = sqlite3.Row
             if kwargs:
-                conditions = ' AND '.join([f"{key} = ?" for key in kwargs.keys()])
-                sql_query = f"SELECT * FROM {table_name} WHERE {conditions}"
-                # Convert enum values to their underlying values for SQLite
+                conditions = []
                 values = []
-                for key in kwargs:
-                    value = kwargs[key]
-                    if hasattr(value, 'value'):  # Check if it's an enum
-                        values.append(value.value)
+                
+                for key, value in kwargs.items():
+                    if '__' in key:
+                        field_name, operator = key.split('__', 1)
                     else:
-                        values.append(value)
+                        field_name, operator = key, 'eq'
+                    
+                    # Handle special operators
+                    if operator == 'not_empty':
+                        conditions.append(f"{field_name} != '' AND {field_name} IS NOT NULL")
+                    elif operator == 'empty':
+                        conditions.append(f"({field_name} = '' OR {field_name} IS NULL)")
+                    elif operator == 'ne':
+                        conditions.append(f"{field_name} != ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'gt':
+                        conditions.append(f"{field_name} > ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'lt':
+                        conditions.append(f"{field_name} < ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'gte':
+                        conditions.append(f"{field_name} >= ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'lte':
+                        conditions.append(f"{field_name} <= ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'like':
+                        conditions.append(f"{field_name} LIKE ?")
+                        values.append(self._convert_enum_value(value))
+                    elif operator == 'in':
+                        placeholders = ','.join(['?' for _ in value])
+                        conditions.append(f"{field_name} IN ({placeholders})")
+                        values.extend([self._convert_enum_value(v) for v in value])
+                    elif operator == 'nin':
+                        placeholders = ','.join(['?' for _ in value])
+                        conditions.append(f"{field_name} NOT IN ({placeholders})")
+                        values.extend([self._convert_enum_value(v) for v in value])
+                    else:  # default to equality
+                        conditions.append(f"{field_name} = ?")
+                        values.append(self._convert_enum_value(value))
+                
+                sql_query = f"SELECT * FROM {table_name} WHERE {' AND '.join(conditions)}"
                 print(sql_query, values)
                 self.cursor.execute(sql_query, values)
             else:
@@ -181,6 +245,13 @@ class DBManager:
             raise ValueError(f"Failed to get iteration data: {e}")
         finally:
             self.conn.row_factory = None
+    
+    def _convert_enum_value(self, value):
+        """Helper method to convert enum values to their underlying values for SQLite."""
+        if hasattr(value, 'value'):  # Check if it's an enum
+            return value.value
+        else:
+            return value
     
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
         table_name = "iterations"
@@ -247,6 +318,8 @@ class DBManager:
     def insert_seen_titles_data(self, data: List[Tuple[str, str]]):
         # data is a list of tuples (title, id)
         table_name = "seen_titles"
+        if len(data) == 0:
+            return
         try:
             # Convert integer IDs to strings to prevent overflow
             converted_data = []
@@ -302,6 +375,8 @@ class DBManager:
 
     def insert_conf_rank_data(self, data: List[Tuple[str, str]]):
         table_name = "conf_rank"
+        if len(data) == 0:
+            return  
         try:
             self.cursor.executemany(f"INSERT INTO {table_name} (venue, rank) VALUES (?, ?)", data)
             self.conn.commit()
