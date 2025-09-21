@@ -7,52 +7,80 @@ class DisagreementStage(Enum):
     TITLE = SelectionStage.TITLE_APPROVED.value
     ABSTRACT_INTRO = SelectionStage.ABSTRACT_INTRO_APPROVED.value
 
-def solve_disagreements(iteration, search_db_1, search_db_2, selection_stage: DisagreementStage):
+def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStage):
     """
-    Solve the disagreements between the two raters.
+    Solve the disagreements between multiple raters.
     """
 
+    db_managers = {search_db: DBManager(search_db) for search_db in search_dbs}
     
-    db_manager_1 = DBManager(search_db_1)
-    db_manager_2 = DBManager(search_db_2)
-
-    selected_pubs_rater1 = db_manager_1.get_iteration_data(iteration=iteration, selected=selection_stage)
-    selected_pubs_rater2 = db_manager_2.get_iteration_data(iteration=iteration, selected=selection_stage)
-    disagreements = set(selected_pubs_rater1) ^ set(selected_pubs_rater2)
-    filtered = set(selected_pubs_rater1) & set(selected_pubs_rater2)
+    selected_pubs = {search_db: db_manager.get_iteration_data(iteration=iteration, selected=selection_stage) for search_db, db_manager in db_managers.items()}
     
-    for i, disagreement in enumerate(disagreements):
-        print((f"({i + 1}/{len(disagreements)})"))
-        if disagreement in selected_pubs_rater1:
-            print("Rater 1 selected the publication: ", disagreement.title)
-            print("Rater 2 did not select the publication: ", disagreement.title)
-        else:
-            print("Rater 1 did not select the publication: ", disagreement.title)
-            print("Rater 2 selected the publication: ", disagreement.title)
-
+    # Find all unique publications across all raters
+    all_pubs = set()
+    for pubs in selected_pubs.values():
+        all_pubs.update(pubs)
+    
+    # Find publications that are not selected by all raters (disagreements)
+    disagreements = {}
+    for rater, pubs in selected_pubs.items():
+        rater_unique_pubs = []
+        for pub in pubs:
+            # Check if this pub is selected by all other raters
+            selected_by_all = all(pub in selected_pubs[other_rater] for other_rater in search_dbs if other_rater != rater)
+            if not selected_by_all:
+                rater_unique_pubs.append(pub)
+        if rater_unique_pubs:
+            disagreements[rater] = rater_unique_pubs
+    
+    # Get all disagreement publications (flatten the dictionary values)
+    all_disagreements = []
+    for pubs in disagreements.values():
+        all_disagreements.extend(pubs)
+    all_disagreements = list(set(all_disagreements))  # Remove duplicates
+    
+    for i, disagreement in enumerate(all_disagreements):
+        print(f"({i + 1}/{len(all_disagreements)})")
+        
+        # Show which raters selected/didn't select this publication
+        selected_by = []
+        not_selected_by = []
+        for rater in search_dbs:
+            if disagreement in selected_pubs[rater]:
+                selected_by.append(rater.replace(".db", ""))
+            else:
+                not_selected_by.append(rater.replace(".db", ""))
+        print("\n--------------------------------")
         print(f"Title: {disagreement.title}")
         print(f"Url: {disagreement.pub_url}")
+        print(f"Selected by: {', '.join(selected_by)}")
+        print(f"Not selected by: {', '.join(not_selected_by)}")
 
         while True:
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
-                db_manager_1.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
-                db_manager_2.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
+                # Update all raters to select this publication
+                for rater in search_dbs:
+                    db_managers[rater].update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
                 break
             elif user_input == 'n':
-                db_manager_1.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value-1)
-                db_manager_2.update_iteration_data(iteration, disagreement.id, selected=selection_stage.value-1)
+                # Update all raters to not select this publication
+                for rater in search_dbs:
+                    db_managers[rater].update_iteration_data(iteration, disagreement.id, selected=selection_stage.value-1)
+                break
+            elif user_input == 's':
+                # Skip this disagreement
                 break
             else:
-                print("Please enter 'y' for yes or 'n' for no.")
+                print("Please enter 'y' for yes, 'n' for no, or 's' for skip.")
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by title')
     parser.add_argument('--iteration', help='iteration number', type=int)
-    parser.add_argument('--search_db_1', help='search db 1', type=str)
-    parser.add_argument('--search_db_2', help='search db 2', type=str)
+    # allow multiple search dbs
+    parser.add_argument('--search_dbs', help='search dbs', type=str, nargs='+')
     parser.add_argument(
         '--selection_stage', 
         help='selection stage', 
@@ -61,8 +89,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     iteration = args.iteration
-    search_db_1 = args.search_db_1
-    search_db_2 = args.search_db_2
-    print(args.selection_stage)
+    search_dbs = args.search_dbs
     selection_stage = DisagreementStage[args.selection_stage]
-    solve_disagreements(iteration, search_db_1, search_db_2, selection_stage)
+    solve_disagreements(iteration, search_dbs, selection_stage)
