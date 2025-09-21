@@ -1,3 +1,8 @@
+
+# ProfOlaf
+
+![ProfOlaf Logo](logo.png)
+
 The **ProfOlaf** tool was built to help researchers with literature **snowballing**. It lets you define a reusable search configuration (time window, source/venue filters, paths, optional proxy). It ingests seed titles from structured or plain-text inputs, queries scholarly sources, and normalizes records.
 It stores initial results and “seen” items in your data store, with progress reporting and request throttling to minimize rate limits.
 
