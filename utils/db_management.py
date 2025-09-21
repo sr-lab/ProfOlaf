@@ -10,7 +10,7 @@ class SelectionStage(Enum):
     NOT_SELECTED = 0
     METADATA_APPROVED = 1
     TITLE_APPROVED = 2
-    ABSTRACT_INTRO_APPROVED = 3
+    CONTENT_APPROVED = 3
 
 
 def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):

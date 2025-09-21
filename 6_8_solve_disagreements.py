@@ -5,7 +5,7 @@ from utils.db_management import DBManager, SelectionStage
 
 class DisagreementStage(Enum):
     TITLE = SelectionStage.TITLE_APPROVED.value
-    ABSTRACT_INTRO = SelectionStage.ABSTRACT_INTRO_APPROVED.value
+    CONTENT = SelectionStage.CONTENT_APPROVED.value
 
 def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStage):
     """

@@ -68,7 +68,7 @@ if __name__ == "__main__":
     
     initial_pubs = db_manager.get_iteration_data(
         iteration=args.iteration - 1, 
-        selected=SelectionStage.ABSTRACT_INTRO_APPROVED
+        selected=SelectionStage.CONTENT_APPROVED
     )
     
     print("Initial Pubs: ", len(initial_pubs))

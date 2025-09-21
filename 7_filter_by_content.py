@@ -11,7 +11,7 @@ def choose_elements(articles, db_manager, iteration):
     """
     updated_data = []
     for i, article in enumerate(articles):
-        if article.selected >= SelectionStage.ABSTRACT_INTRO_APPROVED.value or article.abstract_filtered_out == True:
+        if article.selected >= SelectionStage.CONTENT_APPROVED.value or article.abstract_filtered_out == True:
             continue
 
         title = article.title
@@ -27,7 +27,7 @@ def choose_elements(articles, db_manager, iteration):
 
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
-                article.selected = SelectionStage.ABSTRACT_INTRO_APPROVED   
+                article.selected = SelectionStage.CONTENT_APPROVED   
                 updated_data.append((article.id, article.selected, "selected"))
                 break
             elif user_input == 'n':

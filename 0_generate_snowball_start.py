@@ -67,7 +67,7 @@ def generate_snowball_start(input_file: str, iteration: int, delay: float = 2.0,
         article_data = article_search.search(title)
         if article_data:
             article_data.set_iteration(iteration)
-            article_data.set_selected(SelectionStage.ABSTRACT_INTRO_APPROVED)
+            article_data.set_selected(SelectionStage.CONTENT_APPROVED)
             initial_pubs.append(article_data)
             seen_titles.append((title, article_data.id))
 
