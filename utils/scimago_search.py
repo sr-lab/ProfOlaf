@@ -93,7 +93,7 @@ def parse_rank_from_detail(html_text: str) -> Tuple[Optional[int], Optional[floa
 def fetch_rank(url: str, session: requests.Session):
     session = session or requests.Session()
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ScimagoScraper/1.0)"}
-    r = session.get(url, headers=headers, timeout=30)
+    r = session.get(url, headers=headers)
     r.raise_for_status()
     year, val, q = parse_rank_from_detail(r.text)
     soup = BeautifulSoup(r.text, "html.parser")

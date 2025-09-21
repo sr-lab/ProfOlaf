@@ -35,7 +35,10 @@ def choose_elements(articles, db_manager, iteration):
         
 def main(iteration, db_path):
     db_manager = DBManager(db_path)
-    articles = db_manager.get_iteration_data(iteration=iteration, selected=SelectionStage.METADATA_APPROVED)
+    articles = db_manager.get_iteration_data(
+        iteration=iteration, 
+        selected=SelectionStage.METADATA_APPROVED
+        )
   
     choose_elements(articles, db_manager, iteration)
 

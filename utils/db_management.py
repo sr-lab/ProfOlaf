@@ -19,7 +19,7 @@ def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage =
     """
     pub_info = {}
     pub_info["id"] = pub_id
-    pub_info["container_type"] = pub["container_type"]
+    pub_info["container_type"] = pub.get("container_type", "")
     pub_info["eprint_url"] = pub.get("pub_url", "") if "eprint_url" not in pub else pub["eprint_url"]
     pub_info["source"] = pub.get("source", "")
     pub_info["title"] = pub.get("bib", {}).get("title", "")
@@ -224,7 +224,6 @@ class DBManager:
                         values.append(self._convert_enum_value(value))
                 
                 sql_query = f"SELECT * FROM {table_name} WHERE {' AND '.join(conditions)}"
-                print(sql_query, values)
                 self.cursor.execute(sql_query, values)
             else:
                 self.cursor.execute(f"SELECT * FROM {table_name}")

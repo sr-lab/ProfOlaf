@@ -28,16 +28,16 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager, article_se
     Get articles that cite the pubs for the given iteration.
     """
     while len(initial_pubs) > 0:
-        current_wait_time = 30
         citedby = initial_pubs.pop().id
         if not str(citedby).isdigit():
             continue
         pubs = article_search.get_citedby(citedby)
-        print("Pubs: ", len(pubs))
+        print("Citedby: ", citedby, "Total Results: ", pubs.total_results)
         sys.stdout.flush()
 
         articles = []
         for pub in pubs:
+            print("Pub: ", pub["bib"]["title"])
             if db_manager.get_seen_title(pub["bib"]["title"]) is not None:
                 print("Seen title found for", pub["bib"]["title"])
                 continue
@@ -66,7 +66,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     db_manager = DBManager(args.db_path)
     
-    initial_pubs = db_manager.get_iteration_data(iteration=args.iteration - 1, selected=SelectionStage.NOT_SELECTED)
+    initial_pubs = db_manager.get_iteration_data(
+        iteration=args.iteration - 1, 
+        selected=SelectionStage.ABSTRACT_INTRO_APPROVED
+    )
     
     print("Initial Pubs: ", len(initial_pubs))
     sys.stdout.flush()

@@ -12,7 +12,8 @@ from tabulate import tabulate
 
 from utils.db_management import (
     ArticleData,
-    DBManager
+    DBManager,
+    SelectionStage
 )
 from utils.scimago_search import find_scimago_rank
 from utils.core_table_search import search_core_table, load_core_table
@@ -22,31 +23,31 @@ with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 
-def _get_scimago_rank(venue: str, as_string: bool = False):
-    while True:
-        venue_name = input(f"Enter the name of the venue (leave it blank to use {venue} or 'q' to quit): ")
-        if venue_name == "q":
-            return None, None, None
-        if venue_name == "":
-            venue_name = venue
-        venue_name = venue_name.lower()
-        try:
-            best, rank, categories = find_scimago_rank(venue_name)
-            if as_string:
-                string = f"'{best.title}' ({best.similarity_score})\n\nCategories:\n"
-                for category, bucket in categories.items():
-                    string += f"  {category}: {bucket['current']['quartile']}\n"
-                return string
-            else:
-                return best, rank, categories
-        except Exception as e:
-            print(f"Error searching scimago for {venue_name}: {e}")
-            continue
+def _get_scimago_rank(venue_name: str, as_string: bool = False):
+    venue_name = venue_name.lower()
+    try:
+        best, rank, categories = find_scimago_rank(venue_name)
+        if best is None:
+            return ""
+        if as_string:
+            best.similarity_score = round(best.similarity_score, 2)
+            string = f"'{best.title}' ({best.similarity_score})\n\nCategories:\n"
+            for category, bucket in categories.items():
+                string += f"  {category}: {bucket['current']['quartile']}\n"
+            return string
+        else:
+            return best, rank, categories
+    except Exception as e:
+        print(f"{e}")
+        return ""
 
 
 def _get_core_rank(venue: str, as_string: bool = False):
-    core_rank = search_core_table(venue, load_core_table("ranking_tables/core_table2.csv"), top_k=1)
-    best = core_rank[0]
+    core_rank_acronym = search_core_table(venue, load_core_table("ranking_tables/core_table2.csv"), acronym_search=True, top_k=1)        
+    core_rank = core_rank_acronym if core_rank_acronym else search_core_table(venue, load_core_table("ranking_tables/core_table2.csv"), top_k=1)
+    best = None if core_rank == [] else core_rank[0]
+    if best is None:
+        return ""
     if as_string:
         best.similarity_score = round(best.similarity_score, 2)
         string = f"'{best.title}' ({best.similarity_score})\n\n"
@@ -57,8 +58,13 @@ def _get_core_rank(venue: str, as_string: bool = False):
 
 def search_rank_databases(venue: str):
     while True:
-        scimago_rank = _get_scimago_rank(venue, as_string=True)
-        core_rank = _get_core_rank(venue, as_string=True)
+        venue_name = input(f"Enter the name of the venue (leave it blank to use {venue}): ")
+        if venue_name == "":
+            venue_name = venue
+        scimago_rank = _get_scimago_rank(venue_name, as_string=True)
+        core_rank = _get_core_rank(venue_name, as_string=True)
+        scimago_rank = scimago_rank if scimago_rank else "Not Found in database"
+        core_rank = core_rank if core_rank else "Not Found in database"
         table = tabulate(
             [(scimago_rank, core_rank)], 
             headers=["Scimago", "Core Table"], 
@@ -68,7 +74,7 @@ def search_rank_databases(venue: str):
             disable_numparse=True,
             maxcolwidths=[None, None]
         )
-        print(table)
+        print("\n", table)
 
         while True:
             final_rank = input("Enter the rank for the venue (leave it blank to go back to manual input): ")
@@ -89,8 +95,11 @@ def get_venues(articles: List[ArticleData]):
     """
     venues = set()
     for article in articles:
-        if article.bibtex != "":
+        if article.bibtex != "" and article.bibtex != "NO_BIBTEX":
             library = bibtexparser.loads(article.bibtex)
+            # Check if entries list is not empty before accessing first element
+            if not library.entries:
+                continue
             if library.entries[0]["ENTRYTYPE"] in ["book", "phdthesis", "mastersthesis"]:
                 continue
             if "booktitle" in library.entries[0]:
@@ -115,21 +124,22 @@ def find_similar_venues(venue: str, existing_venues: Set[str], threshold: float 
     similar_venues = []
     for i, sim in enumerate(cosine_similarities):
         if sim > threshold:
-            similar_venues.append((list(existing_venues)[i], sim))
+            sim = round(sim, 2)
+            similar_venues.append((list(existing_venues)[i], sim, conf_rank[list(existing_venues)[i]]))
     similar_venues.sort(key=lambda x: x[1], reverse=True)
   
     return similar_venues[:top_k]
 
 def prompt_similar_venues(venue: str, similar_venues: List[Tuple[str, float]], conf_rank: Dict[str, str]) -> str:
     print(f"\nFound {len(similar_venues)} similar venues to '{venue}':")
-    table = tabulate(similar_venues, headers=["Venue", "Similarity"], tablefmt="grid", stralign="left", colalign=("left", "left"), disable_numparse=True, maxcolwidths=[None, None])
-    print(table)
+    table = tabulate(similar_venues, headers=["Venue", "Similarity", "Rank"], tablefmt="grid", stralign="left", colalign=("left", "left"), disable_numparse=True, maxcolwidths=[None, None])
+    print(table, "\n")
     rank = None
     while rank is None:
         try:
-            rank = int(input("Enter the rank for the venue: "))
+            rank = str(input("Enter the rank for the venue (empty to skip): "))
             if rank == "":
-                rank = None
+                return None
         except ValueError:
             print("Invalid input. Please enter a number.")
     
@@ -145,6 +155,7 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
     # Check if venue is arxiv, ssrn or corr is the venue
     unindexed_venues = []
     for i, venue in enumerate(venues):
+        venue = venue.strip().replace("\n", " ")
         if venue.lower() not in [k.lower() for k in conf_rank.keys()]:
             if "arxiv" in venue.lower() or "ssrn" in venue.lower() or 'corr' in venue.lower():
                 rank = "NA"
@@ -162,6 +173,7 @@ def get_unindexed_venues(venues: Set[str], conf_rank: Dict[str, str]):
                 rank = search_rank_databases(venue)
         else:
             rank = search_rank_databases(venue)
+
         conf_rank[venue] = rank
         db_manager.insert_conf_rank_data([(venue, rank)])
 
@@ -172,9 +184,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     db_manager = DBManager(args.db_path)
-    articles = db_manager.get_iteration_data(iteration=args.iteration)
-
+    articles = db_manager.get_iteration_data(
+        iteration=args.iteration,
+        bibtex__not_empty=True,
+        bibtex__ne="NO_BIBTEX",
+        selected=SelectionStage.NOT_SELECTED
+    )
+    print("\nArticles: ", len(articles))
     venues = get_venues(articles)
+    print("\nVenues: ", len(venues))
 
     conf_rank = db_manager.get_conf_rank_data()
     conf_rank = {venue: rank for venue, rank in conf_rank}

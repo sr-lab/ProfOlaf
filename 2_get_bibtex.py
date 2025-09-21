@@ -9,8 +9,7 @@ import argparse
 from utils.db_management import (
     DBManager, 
     ArticleData,
-    get_article_data,
-    initialize_db
+    SelectionStage,
 )
 from utils.proxy_generator import get_proxy
 import bibtexparser
@@ -47,37 +46,35 @@ def search_bibtex_in_dblp(title: str):
 
 def cache_by_title(func):
     cache = {}
-    def wrapper(pub: scholarly.Publication):
-        title = pub.get("title", "")
+    def wrapper(pub):
+        title = pub.get("bib", {}).get("title", "")
         if title and title not in cache:
             cache[title] = func(pub)
-        return cache[title]
+        return cache.get(title, "")
     return wrapper
 
 @cache_by_title
-def get_alternative_bibtexes_cached(pub: scholarly.Publication):
+def get_alternative_bibtexes_cached(pub):
     """
     Cached version of get_alternative_bibtexes to avoid repeated API calls.
     Uses pub as cache key.
     """
-    try:
-        article_search = ArticleSearch(GoogleScholarSearchMethod())
-        versions = article_search.get_all_versions(pub)
-        for version in versions:
-            booktitle = version.get("booktitle", "") or version.get("bib", {}).get("booktitle", "")
-            journal = version.get("journal", "") or version.get("bib", {}).get("journal", "")
-            venue = version.get("venue", "")
-            final_venue = booktitle or journal or venue
-            if check_valid_venue(final_venue):
-                return version
-        return ""
-    except Exception as e:
-        print(f"Error in get_alternative_bibtexes_cached for {pub.get("title", "")}: {e}")
-        return ""
+
+    article_search = ArticleSearch(GoogleScholarSearchMethod())
+    versions = article_search.get_all_versions_bibtexes(pub)
+    for version in versions:
+        venue = get_bibtex_venue(version)
+        if check_valid_venue(venue):
+            return version
+    return ""
+
 
 def get_bibtex_venue(bibtex: str):
     if bibtex != "":
         library = bibtexparser.loads(bibtex)
+        # Check if entries list is not empty before accessing first element
+        if not library.entries:
+            return ""
         if library.entries[0]["ENTRYTYPE"] in ["book", "phdthesis", "mastersthesis"]:
             return ""
         if "booktitle" in library.entries[0]:
@@ -87,54 +84,107 @@ def get_bibtex_venue(bibtex: str):
     
     return ""
 
-def get_bibtex_single(article: ArticleData) -> Tuple[str, str]:
-    """
-    Get the bibtex string for a single article.
-    Returns (article_id, bibtex_string)
-    """
-    current_wait_time = 30
+def _get_main_bibtex(article: ArticleData) -> Tuple[str, str]:
+    current_wait_time = 20
     max_retries = 3
     retry_count = 0
-    print(f"Processing: {article.title}")
 
     article_search = ArticleSearch(GoogleScholarSearchMethod())
-    
     while retry_count < max_retries:
         try:
-            pub = article_search.search(article.title)
+            article_search.set_method(GoogleScholarSearchMethod())
+            pub = scholarly.search_single_pub(article.title)
             bibtex = article_search.get_bibtex(pub)
             venue = get_bibtex_venue(bibtex)
-            
             # Early venue check - if venue is already valid, skip alternative searches
             if venue and check_valid_venue(venue):
-                return article.id, bibtex
-            
-            # Only search alternatives if venue contains arxiv/Corr/No title
-            alternative_bibtex = ""
-            if venue and "arxiv" in venue.lower():
-                article_search.set_method(DBLPSearchMethod())
-                alternative_bibtex = article_search.get_bibtex(article.title)
-                if alternative_bibtex:
-                    return article.id, alternative_bibtex
-            
-                alternative_bibtex = get_alternative_bibtexes_cached(pub)
-            
-            final_bibtex = alternative_bibtex if alternative_bibtex != "" else bibtex
-            print(f"BibTeX found for {article.title}")
-            return article.id, final_bibtex
-            
+                return bibtex, None
+            else:
+                return bibtex, pub
         except Exception as e:
-            print(f"Error processing {article.title}: {e}")
+            title = article.title
+            print(f"Error processing {title}: {e}")
             retry_count += 1
             print(f"Retrying, waiting {current_wait_time}...", file=sys.stderr)
             sys.stdout.flush()
             time.sleep(current_wait_time)
             current_wait_time *= 2
             continue
+    return None, None
+
+def _get_dblp_bibtex(article: ArticleData) -> Tuple[str, str]:
+    article_search = ArticleSearch(DBLPSearchMethod())
+    current_wait_time = 20
+    max_retries = 3
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            bibtex = article_search.get_bibtex(article)
+            if bibtex and get_bibtex_venue(bibtex) and check_valid_venue(get_bibtex_venue(bibtex)):
+                return bibtex
+            else:
+                return bibtex
+        except Exception as e:
+            title = article.title
+            print(f"Error processing {title}: {e}")
+            retry_count += 1
+            print(f"Retrying, waiting {current_wait_time}...", file=sys.stderr)
+            sys.stdout.flush()
+            time.sleep(current_wait_time)
+            current_wait_time *= 2
+            continue
+
+    return None
+
+def _get_alternative_bibtex(pub: dict) -> Tuple[str, str]:
+    current_wait_time = 20
+    max_retries = 3
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            bibtex = get_alternative_bibtexes_cached(pub)
+            if bibtex is not None and bibtex != "":
+                return bibtex
+            else:
+                return None
+        except Exception as e:
+            title = pub.get('title', "")
+            print(f"Error processing {title}: {e}")
+            retry_count += 1
+            print(f"Retrying, waiting {current_wait_time}...", file=sys.stderr)
+            sys.stdout.flush()
+            time.sleep(current_wait_time)
+            current_wait_time *= 2
+            continue
+        
+    return None
+
+def get_bibtex_single(article: ArticleData) -> Tuple[str, str]:
+    """
+    Get the bibtex string for a single article.
+    Returns (article_id, bibtex_string)
+    """
+
+    print("Getting dblp bibtex")
+    dblp_bibtex = _get_dblp_bibtex(article)
+    if dblp_bibtex is not None and dblp_bibtex != "":
+        return article.id, dblp_bibtex
     
-    # If all retries are exhausted, return empty bibtex
-    print(f"Failed to get bibtex for {article.title} after {max_retries} retries")
-    return article.id, ""
+    print("Getting bibtex from google scholar")
+    scholar_bibtex, pub = _get_main_bibtex(article)
+    if scholar_bibtex is not None and scholar_bibtex != "" and pub is None:
+        return article.id, scholar_bibtex
+
+    if pub is not None:
+        print("Getting alternative bibtex")
+        alternative_bibtex = _get_alternative_bibtex(pub)
+        if alternative_bibtex is not None and alternative_bibtex != "":
+            return article.id, alternative_bibtex
+        
+    if pub is not None and scholar_bibtex is not None and scholar_bibtex != "":
+        return article.id, scholar_bibtex
+    else:
+        return article.id, "NO_BIBTEX"
 
 def process_articles_batch(articles: List[ArticleData], max_workers: int = 3) -> List[Tuple[str, str]]:
     """
@@ -157,17 +207,12 @@ def process_articles_batch(articles: List[ArticleData], max_workers: int = 3) ->
                 result = future.result()
                 # Ensure result is not None and is a tuple
                 if result is None:
-                    #print(f"Warning: get_bibtex_single returned None for {article.title}")
                     result = (article.id, "")
                 elif not isinstance(result, tuple) or len(result) != 2:
-                    #print(f"Warning: get_bibtex_single returned invalid result for {article.title}: {result}")
                     result = (article.id, "")
                 
                 results.append(result)
-                #print(f"Completed: {article.title}")
             except Exception as e:
-                #print(f"Error processing {article.title}: {e}")
-                # Add empty result to maintain order
                 results.append((article.id, ""))
     
     return results
@@ -213,9 +258,10 @@ def process_articles_optimized(iteration: int, articles: List[ArticleData],
         results = []
         for i, article in enumerate(articles_to_process):
             print(f"Processing {i+1}/{len(articles_to_process)}: {article.title}")
+            
             article_id, bibtex = get_bibtex_single(article)
             results.append((article_id, bibtex, "bibtex"))
-            
+                        
             # Update database in batches
             if len(results) >= batch_size or i == len(articles_to_process) - 1:
                 db_manager.update_batch_iteration_data(iteration, results)
@@ -227,12 +273,16 @@ if __name__ == "__main__":
     parser.add_argument('--iteration', help='iteration number', type=int)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     parser.add_argument('--batch_size', help='batch size for processing', type=int, default=20)
-    parser.add_argument('--max_workers', help='max workers for parallel processing', type=int, default=1)
+    parser.add_argument('--max_workers', help='max workers for parallel processing', type=int, default=3)
     parser.add_argument('--no_parallel', help='disable parallel processing', action='store_true')
     args = parser.parse_args()
 
     db_manager = DBManager(args.db_path)
-    articles = db_manager.get_iteration_data(iteration=args.iteration, bibtex__empty=True)
+    articles = db_manager.get_iteration_data(
+        iteration=args.iteration, 
+        bibtex__empty=True,
+        selected=SelectionStage.NOT_SELECTED
+    )
     
     print(f"Found {len(articles)} articles without bibtex in iteration {args.iteration}")
     

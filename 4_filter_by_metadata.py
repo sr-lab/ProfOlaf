@@ -69,6 +69,10 @@ def automated_check_venue_and_peer_reviewed(bibtex, db_manager):
     Check the bibtex string to see if the publication is peer-reviewed and has a venue.
     """
     library = bibtexparser.loads(bibtex)
+    # Check if entries list is not empty before accessing first element
+    if not library.entries:
+        return False
+    
     venue = None
     if "booktitle" in library.entries[0]:
         venue = library.entries[0]["booktitle"]
@@ -83,6 +87,7 @@ def automated_check_venue_and_peer_reviewed(bibtex, db_manager):
         return False
     
     if venue is not None:
+        venue = venue.strip().replace("\n", " ")
         venue_rank = db_manager.get_venue_rank_data(venue)
         if venue_rank is not None:
             if venue_rank[0] in search_conf["venue_rank_list"]:
@@ -99,9 +104,9 @@ def check_venue_and_peer_reviewed(bibtex_path, db_manager):
     result = automated_check_venue_and_peer_reviewed(bibtex_path, db_manager)
     if result is not None:
         return result
-    ranks = "or ".join(search_conf["venue_rank_list"])
+    
     while True:
-        user_input = input(f"Is the publication peer-reviewed and {ranks} (y/n): ").strip().lower()
+        user_input = input(f"Is the publication peer-reviewed and in one of the following ranks: {search_conf['venue_rank_list']} (y/n): ").strip().lower()
         if user_input == 'y':
             return True
         if user_input == 'n':
@@ -113,7 +118,12 @@ def filter_elements(db_manager: DBManager, iteration: int):
     """
     Filter the elements by metadata.
     """
-    article_data = db_manager.get_iteration_data(iteration=iteration)
+    article_data = db_manager.get_iteration_data(
+        iteration=iteration, 
+        bibtex__not_empty=True, 
+        bibtex__ne="NO_BIBTEX", 
+        selected=SelectionStage.NOT_SELECTED
+    )
     
     updated_data = []
     for i, article in enumerate(article_data):

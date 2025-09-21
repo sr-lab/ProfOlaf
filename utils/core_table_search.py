@@ -11,6 +11,7 @@ RANK_COL = "rank"
 @dataclass
 class CoreRank:
     title: str
+    acronym: str
     similarity_score: float
     rank: str
 
@@ -59,7 +60,7 @@ def load_core_table(file_path: str) -> pd.DataFrame:
     
     return df
 
-def search_core_table(query: str, table: pd.DataFrame, acronym: bool = False, top_k: int = 5) -> list:
+def search_core_table(query: str, table: pd.DataFrame, acronym_search: bool = False, top_k: int = 5) -> list:
     """ 
     Search the core table for a query. First for an exact match, then for a fuzzy match.
     
@@ -78,7 +79,7 @@ def search_core_table(query: str, table: pd.DataFrame, acronym: bool = False, to
     rank_col = RANK_COL
     
     # Determine which column to search in
-    search_column = acronym_col if acronym and acronym_col else title_col
+    search_column = acronym_col if acronym_search and acronym_col else title_col
     
     if search_column is None:
         print(f"Warning: Could not find appropriate search column. Available columns: {table.columns.tolist()}")
@@ -90,23 +91,27 @@ def search_core_table(query: str, table: pd.DataFrame, acronym: bool = False, to
         result_row = exact_match.iloc[0]
         title = result_row[title_col] if title_col else result_row[search_column]
         rank = result_row[rank_col] if rank_col else "Unknown"
-        return [(title, 1.0, rank)]
-    
-    # Perform fuzzy search
-    candidates = []
-    for idx, row in table.iterrows():
-        search_value = row[search_column]
-        if pd.isna(search_value):
-            continue
-            
-        score = similarity_score(query, str(search_value))
-        title = row[title_col] if title_col else search_value
-        rank = row[rank_col] if rank_col else "Unknown"
-        candidates.append(CoreRank(title=title, similarity_score=score, rank=rank))
-    
-    candidates.sort(key=lambda x: x.similarity_score, reverse=True)
-    # Return top 5 candidates with score > 0.5
-    return [candidate for candidate in candidates[:top_k] if candidate.similarity_score > 0.5]
+        acronym = result_row[acronym_col] if acronym_col else ""
+        return [CoreRank(title=title, acronym=acronym, similarity_score=1.0, rank=rank)]
+    elif acronym_search:
+        return []
+    else:
+        # Perform fuzzy search
+        candidates = []
+        for idx, row in table.iterrows():
+            search_value = row[search_column]
+            if pd.isna(search_value):
+                continue
+                
+            score = similarity_score(query, str(search_value))
+            title = row[title_col] if title_col else search_value
+            rank = row[rank_col] if rank_col else "Unknown"
+            acronym = row[acronym_col] if acronym_col else ""
+            candidates.append(CoreRank(title=title, acronym=acronym, similarity_score=score, rank=rank))
+        
+        candidates.sort(key=lambda x: x.similarity_score, reverse=True)
+        # Return top 5 candidates with score > 0.5
+        return [candidate for candidate in candidates[:top_k] if candidate.similarity_score > 0.5]
     
 
 
