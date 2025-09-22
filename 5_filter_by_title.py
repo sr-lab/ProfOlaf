@@ -12,11 +12,11 @@ def choose_elements(articles, db_manager, iteration):
     updated_data = []
     for i, article in enumerate(articles):
         if article.selected >= SelectionStage.TITLE_APPROVED.value or article.title_filtered_out == True:
-            print(f"({i+1}/{len(articles)}) Skipping Article {article.title}. Selected: {article.selected}, Title Filtered Out: {article.title_filtered_out}")
+            print(f"\n({i+1}/{len(articles)}) Skipping Article {article.title}. Selected: {article.selected}, Title Filtered Out: {article.title_filtered_out}")
             continue
-        print(f"({i+1}/{len(articles)})")
+        print(f"\n({i+1}/{len(articles)})")
         while True:
-            print(f"\nTitle: {article.title}")
+            print(f"Title: {article.title}")
             print(f"ID: {article.id}")
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
