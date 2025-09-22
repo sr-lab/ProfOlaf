@@ -12,6 +12,7 @@ def choose_elements(articles, db_manager, iteration):
     updated_data = []
     for i, article in enumerate(articles):
         if article.selected >= SelectionStage.TITLE_APPROVED.value or article.title_filtered_out == True:
+            print(f"({i+1}/{len(articles)}) Skipping Article {article.title}. Selected: {article.selected}, Title Filtered Out: {article.title_filtered_out}")
             continue
         print(f"({i+1}/{len(articles)})")
         while True:
