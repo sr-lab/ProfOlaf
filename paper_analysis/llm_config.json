@@ -1,0 +1,38 @@
+{
+    "openai": {
+      "api_key": "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",
+      "api_key_env": "OPENAI_API_KEY",
+      "model": "gpt-5-nano",
+      "temperature": 1.0,
+      "max_output_tokens": 5000,
+      "context_length": 16385,
+      "pricing_per_1k_tokens": {
+        "input": 0.0015,
+        "output": 0.002
+      }
+    },
+    "gemini": {
+      "api_key": "your-gemini-api-key-here",
+      "api_key_env": "GEMINI_API_KEY",
+      "model": "gemini-pro",
+      "temperature": 0.7,
+      "max_output_tokens": 5000,
+      "context_length": 16385,
+      "pricing_per_1k_tokens": {
+        "input": 0.0005,
+        "output": 0.0015
+      }
+    },
+    "anthropic": {
+      "api_key": "your-anthropic-api-key-here",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "claude-3-sonnet-20240229",
+      "temperature": 0.7,
+      "max_output_tokens": 5000,
+      "context_length": 16385,
+      "pricing_per_1k_tokens": {
+        "input": 0.003,
+        "output": 0.015
+      }
+    }
+  }
