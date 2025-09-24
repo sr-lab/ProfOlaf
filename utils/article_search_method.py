@@ -10,6 +10,10 @@ import bibtexparser
 from bibtexparser.bwriter import BibTexWriter
 from bibtexparser.bibdatabase import BibDatabase
 
+from crossref import CrossRefAPIClient
+
+
+
 def check_valid_venue(venue: str):
     return venue != "" and "arxiv" not in venue.lower() \
         and "corr" not in venue.lower() \
@@ -76,8 +80,9 @@ class GoogleScholarSearchMethod(ArticleSearchMethod):
     
     def get_all_versions_bibtexes(self, pub):
         versions = scholarly.get_all_versions_bibtexes(pub)
-        if versions is None:
-            print("No versions found for", pub["title"])
+        print("Versions:", versions)
+        if versions is None or versions == []:
+            print("No versions found")
             return []
         for version in versions:
             version = bibtexparser.loads(version)
@@ -119,6 +124,33 @@ class DBLPSearchMethod(ArticleSearchMethod):
         bibtex = response.text
         return bibtex
     
+
+class SemanticScholarSearchMethod(ArticleSearchMethod):
+    search_query = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}&fields=title,authors,paperId,citationStyles,venue"
+    snowballing_query = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}&fields=title,authors,paperId,citations,references"
+    def search(self, query: str):
+        response = requests.get(self.search_query.format(query=query), timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    
+    def get_bibtex(self, article: ArticleData):
+        response = requests.get(self.search_query.format(query=article.title), timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    
+    def get_citedby(self, citedby: str):
+        pass
+    
+
+method = SemanticScholarSearchMethod()
+data = method.search("Proof Flow: Preliminary Study on Generative Flow Network Language Model Tuning for Formal Reasoning")
+print(data)
+
+#for item in data["message"]["items"]:
+#    print(item["title"])
+
 
 class ArticleSearch:
     def __init__(self, method: ArticleSearchMethod):

@@ -6,15 +6,21 @@ import argparse
 
 from utils.db_management import (
     DBManager, 
-    initialize_db,
     SelectionStage
 )
+
+from langdetect import detect
+
+from rich import print
+
+COLOR_START = "[bold magenta]"
+COLOR_END = "[/bold magenta]"
 
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 
-def check_year(pub_year):
+def is_year_valid(pub_year):
     """
     Check if the publication is between the start and end year.
     """
@@ -32,23 +38,23 @@ def check_year(pub_year):
                 print("Please enter 'y' for yes or 'n' for no.")
     return True
 
-def check_english(bibtex, db_manager):
+def is_in_english(title, db_manager):
     """
     Check if the publication is in English.
     """
-    if automated_check_venue_and_peer_reviewed(bibtex, db_manager):
+    if detect(title) == "en":
         return True
+    else:
+        while True:
+            user_input = input(f"Is the publication in English (y/n): ").strip().lower()
+            if user_input == 'y':
+                return True
+            if user_input == 'n':
+                return False
+            else:
+                print("Please enter 'y' for yes or 'n' for no.")
 
-    while True:
-        user_input = input(f"Is the publication in English (y/n): ").strip().lower()
-        if user_input == 'y':
-            return True
-        if user_input == 'n':
-            return False
-        else:
-            print("Please enter 'y' for yes or 'n' for no.")
-
-def check_download(eprint_url):
+def is_downloadable(eprint_url):
     """
     Check if the publication is available for download.
     """
@@ -97,7 +103,7 @@ def automated_check_venue_and_peer_reviewed(bibtex, db_manager):
     
     return None
         
-def check_venue_and_peer_reviewed(bibtex_path, db_manager):
+def is_venue_and_peer_reviewed(bibtex_path, db_manager):
     """
     Check if the publication is peer-reviewed and has a venue. If it is not present in the bibtex string, ask the user.
     """
@@ -114,7 +120,7 @@ def check_venue_and_peer_reviewed(bibtex_path, db_manager):
         else:
             print("Please enter 'y' for yes or 'n' for no.")
 
-def filter_elements(db_manager: DBManager, iteration: int):
+def filter_elements(db_manager: DBManager, iteration: int, disable_venue_check, disable_year_check, disable_english_check, disable_download_check):
     """
     Filter the elements by metadata.
     """
@@ -126,48 +132,57 @@ def filter_elements(db_manager: DBManager, iteration: int):
     )
     
     updated_data = []
+    articles_kept_counter = 0
     for i, article in enumerate(article_data):
-        print("\n--------------------------------")
-        print(f"Element {i+1} out of {len(article_data)}")
+        print("\n-----------------------------------------------------")
+        print(f"Element {i+1} out of {len(article_data)}: {COLOR_START}{article.title}{COLOR_END}")
         print(f"ID: {article.id}")
-        print(f"Title: {article.title}")
         print(f"Venue: {article.venue}")
         print(f"Url: {article.eprint_url}")
     
-        if not check_venue_and_peer_reviewed(article.bibtex, db_manager):
+        if not disable_venue_check and not is_venue_and_peer_reviewed(article.bibtex, db_manager):
             print("Venue and peer-reviewed filtered out")
             article.venue_filtered_out = True
             updated_data.append((article.id, article.venue_filtered_out, "venue_filtered_out"))
-
-        elif not check_year(article.pub_year):
+            continue
+        if not disable_year_check and not is_year_valid(article.pub_year):
             print("Year filtered out")
             article.year_filtered_out = True
             updated_data.append((article.id, article.year_filtered_out, "year_filtered_out"))
-        elif not check_english(article.bibtex, db_manager):
+            continue
+        if not disable_english_check and not is_in_english(article.title, db_manager):
             print("Language filtered out")
             article.language_filtered_out = True
             updated_data.append((article.id, article.language_filtered_out, "language_filtered_out"))
-        elif not check_download(article.eprint_url):
+            continue      
+        if not disable_download_check and not is_downloadable(article.eprint_url):
             print("Download filtered out")
             article.download_filtered_out = True
             updated_data.append((article.id, article.download_filtered_out, "download_filtered_out"))
-        else:
-            print("Selected")
-            article.selected = SelectionStage.METADATA_APPROVED
-            updated_data.append((article.id, article.selected, "selected"))
-        print("--------------------------------")
+            continue
+
+        articles_kept_counter += 1
+        print("Selected")
+        article.selected = SelectionStage.METADATA_APPROVED
+        updated_data.append((article.id, article.selected, "selected"))
+        print("-----------------------------------------------------")
 
 
     db_manager.update_batch_iteration_data(iteration, updated_data)
-    
+    print(f"Kept {articles_kept_counter} out of {len(article_data)} articles")
 
-def main(iteration, db_path):
+def main(iteration, db_path, disable_venue_check, disable_year_check, disable_english_check, disable_download_check):
     db_manager = DBManager(db_path)
-    filter_elements(db_manager, iteration)
+    filter_elements(db_manager, iteration, disable_venue_check, disable_year_check, disable_english_check, disable_download_check)
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by metadata')
     parser.add_argument('--iteration', help='iteration number', type=int, required=True)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
+    # Flags to disable different checks
+    parser.add_argument('--disable_venue_check', help='disable venue check', action='store_true')
+    parser.add_argument('--disable_year_check', help='disable year check', action='store_true')
+    parser.add_argument('--disable_english_check', help='disable english check', action='store_true')
+    parser.add_argument('--disable_download_check', help='disable download check', action='store_true')
     args = parser.parse_args()
-    main(args.iteration, args.db_path)
+    main(args.iteration, args.db_path, args.disable_venue_check, args.disable_year_check, args.disable_english_check, args.disable_download_check)

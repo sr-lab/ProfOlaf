@@ -62,6 +62,7 @@ def get_alternative_bibtexes_cached(pub):
 
     article_search = ArticleSearch(GoogleScholarSearchMethod())
     versions = article_search.get_all_versions_bibtexes(pub)
+    print("Versions:", versions)
     for version in versions:
         venue = get_bibtex_venue(version)
         if check_valid_venue(venue):
@@ -184,6 +185,7 @@ def get_bibtex_single(article: ArticleData) -> Tuple[str, str]:
     if pub is not None and scholar_bibtex is not None and scholar_bibtex != "":
         return article.id, scholar_bibtex
     else:
+        print("No bibtex found")
         return article.id, "NO_BIBTEX"
 
 def process_articles_batch(articles: List[ArticleData], max_workers: int = 3) -> List[Tuple[str, str]]:

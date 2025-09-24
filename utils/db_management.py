@@ -92,6 +92,18 @@ class DBManager:
 
     # -------------------------- Iteration Table Methods --------------------------
 
+    def check_current_iteration(self):
+        """ Check the most recent iteration in the database """
+        table_name = "iterations"
+        try:
+            self.cursor.execute(f"SELECT MAX(iteration) FROM {table_name}")
+            current_iteration = self.cursor.fetchone()[0]
+            self.cursor.execute(f"SELECT MAX(selected) FROM {table_name} WHERE iteration = ?", (current_iteration,))
+            max_selected = self.cursor.fetchone()[0]
+            return current_iteration, max_selected
+        except Exception as e:
+            self.conn.rollback()
+
     def create_iterations_table(self):
         # create a table for the iteration if it doesn't exist
         table_name = "iterations"
@@ -272,6 +284,8 @@ class DBManager:
         except Exception as e:
             self.conn.rollback()
             raise ValueError(f"Failed to update iteration data: {e}")
+        
+    
 
     def update_batch_iteration_data(self, iteration: int, update_data: List[Tuple[str, any, str]]):
         table_name = "iterations"

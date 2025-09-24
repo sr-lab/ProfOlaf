@@ -34,12 +34,15 @@ def choose_elements(articles, db_manager, iteration):
 
     db_manager.update_batch_iteration_data(iteration, updated_data)
         
-def main(iteration, db_path):
+def main(iteration, db_path, refresh):
     db_manager = DBManager(db_path)
     articles = db_manager.get_iteration_data(
         iteration=iteration, 
         selected=SelectionStage.METADATA_APPROVED
         )
+    
+    if refresh:
+        print("TODO: Refresh the database at iteration", iteration, "for the title check")
   
     choose_elements(articles, db_manager, iteration)
 
@@ -47,5 +50,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Filter by title')
     parser.add_argument('--iteration', help='iteration number', type=int, required=True)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
+    parser.add_argument('--refresh', help='refresh the database', action='store_true')
     args = parser.parse_args()
-    main(args.iteration, args.db_path)
+    main(args.iteration, args.db_path, args.refresh)
