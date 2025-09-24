@@ -59,6 +59,8 @@ class ArticleData:
     selected: bool = False
     bibtex: str = ""
     iteration: int = 0
+    title_reason: str = ""
+    content_reason: str = ""
     dict = asdict
 
     def set_iteration(self, iteration: int):

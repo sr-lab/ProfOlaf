@@ -27,12 +27,16 @@ def choose_elements(articles, db_manager, iteration):
 
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
+                user_reason = input(f"Please enter the reason for the selection (enter to skip): ").strip()
                 article.selected = SelectionStage.CONTENT_APPROVED   
                 updated_data.append((article.id, article.selected, "selected"))
+                updated_data.append((article.id, user_reason, "content_reason"))
                 break
             elif user_input == 'n':
+                user_reason = input(f"Please enter the reason for the rejection (enter to skip): ").strip()
                 article.abstract_filtered_out = True
                 updated_data.append((article.id, article.abstract_filtered_out, "abstract_filtered_out"))
+                updated_data.append((article.id, user_reason, "content_reason"))
                 break
             elif user_input == 's':
                 break
