@@ -40,9 +40,11 @@ def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStag
         not_selected_by = []
         reasons = {}
         for rater in search_dbs:
+        
             original_rating = db_managers[rater].get_iteration_data(iteration=iteration, id=disagreement.id)[0]
+            print("original rating: ", rater, original_rating.selected)
             reasons[rater.replace(".db", "")] = original_rating.title_reason if selection_stage == DisagreementStage.TITLE else original_rating.content_reason
-            if original_rating.selected:
+            if original_rating.selected == selection_stage.value:
                 selected_by.append(rater.replace(".db", ""))
             else:
                 not_selected_by.append(rater.replace(".db", ""))

@@ -36,7 +36,7 @@ def choose_elements(articles, db_manager, iteration):
             else:
                 print("Please enter 'y' for yes or 'n' for no.")
 
-    db_manager.update_batch_iteration_data(iteration, updated_data)
+        db_manager.update_batch_iteration_data(iteration, updated_data)
         
 def main(iteration, db_path, refresh):
     db_manager = DBManager(db_path)
