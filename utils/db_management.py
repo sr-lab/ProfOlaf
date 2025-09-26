@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import os
 from collections import defaultdict
 from dataclasses import dataclass, asdict, fields
 from typing import List, Tuple
@@ -56,7 +57,7 @@ class ArticleData:
     language_filtered_out: bool = False
     download_filtered_out: bool = False
     new_pub: bool = False
-    selected: bool = False
+    selected: int = 0
     bibtex: str = ""
     iteration: int = 0
     title_reason: str = ""
@@ -88,7 +89,10 @@ class DBManager:
         float: 'REAL',
         bool: 'BOOLEAN'
     }
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, new_db: bool = False):
+        # if new_db is false and the db doesn't exist, raise an error
+        if not new_db and not os.path.exists(db_path):
+            raise ValueError(f"Database file does not exist: {db_path}")
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
 
@@ -419,7 +423,7 @@ class DBManager:
 
 
 def initialize_db(db_path: str):
-    db_manager = DBManager(db_path)
+    db_manager = DBManager(db_path, new_db=True)
     db_manager.create_iterations_table()
     db_manager.create_seen_titles_table()
     db_manager.create_conf_rank_table()
