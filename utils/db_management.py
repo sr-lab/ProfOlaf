@@ -8,10 +8,12 @@ from enum import Enum
 
 # Enum for the different selection stages of the process
 class SelectionStage(Enum):
+    DUPLICATE = -1
     NOT_SELECTED = 0
     METADATA_APPROVED = 1
     TITLE_APPROVED = 2
     CONTENT_APPROVED = 3
+    
 
 
 def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
@@ -62,6 +64,7 @@ class ArticleData:
     iteration: int = 0
     title_reason: str = ""
     content_reason: str = ""
+    duplicate: bool = False
     dict = asdict
 
     def set_iteration(self, iteration: int):
@@ -70,7 +73,8 @@ class ArticleData:
         self.selected = selected
     def set_bibtex(self, bibtex: str):
         self.bibtex = bibtex
-    
+    def set_duplicate(self, duplicate: bool):
+        self.duplicate = duplicate
     def __hash__(self):
         # Use id as the primary hash since it should be unique
         return hash(self.id)
