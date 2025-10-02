@@ -1,0 +1,109 @@
+,title,Topics (MA),Topics (NS),Result
+0,Are large language models memorizing bug benchmarks?,"Code Generation, Program Synthesis, Benchmark Data Contamination Mitigation",Benchmark Data Contamination Mitigation,Benchmark Data Contamination Mitigation
+1,Repairllama: Efficient representations and fine-tuned adapters for program repair,Automated Program Repair,Automated Program Repair,Automated Program Repair
+2,Do LLMs consider security? an empirical study on responses to programming questions,"Code Vulnerability Analysis, Large Language Models for Code Security","Code Vulnerability Analysis, Code Security Benchmarking, Large Language Models for Code Security","Code Vulnerability Analysis, Large Language Models for Code Security, Code Security Benchmarking"
+3,Repairbench: Leaderboard of frontier models for program repair,Automated Program Repair,Automated Program Repair,Automated Program Repair
+4,The Sustainability Face of Automated Program Repair Tools,Automated Program Repair,Automated Program Repair,Automated Program Repair
+5,SnipGen: A Mining Repository Framework for Evaluating LLMs for Code,"Code Generation, Program Synthesis","Benchmark Data Contamination Mitigation, Code Generation","Code Generation, Benchmark Data Contamination Mitigation, Code Summarization"
+6,Can test generation and program repair inform automated assessment of programming projects?,"Automated Program Repair, Code Generation","Code Generation, Automated Program Repair, Fault Localization","Automated Program Repair, Code Generation, Fault Localization"
+7,CODEMORPH: Mitigating Data Leakage in Large Language Model Assessment,"Benchmark Data Contamination Mitigation, Code Generation",Benchmark Data Contamination Mitigation,Benchmark Data Contamination Mitigation
+8,Can llms replace manual annotation of software engineering artifacts?,Code Summarization,,Code Summarization
+9,SecureQwen: Leveraging LLMs for vulnerability detection in python codebases,"Code Vulnerability Analysis, Large Language Models for Code Security","Code Vulnerability Analysis, Large Language Models for Code Security","Code Vulnerability Analysis, Large Language Models for Code Security"
+10,Ctibench: A benchmark for evaluating llms in cyber threat intelligence,Cybersecurity Benchmarking for LLMs,Cybersecurity Benchmarking for LLMs,Cybersecurity Benchmarking for LLMs
+11,Codeultrafeedback: An llm-as-a-judge dataset for aligning large language models to coding preferences,Automated Code Review,Code Generation,Code Generation
+12,Hybrid automated program repair by combining large language models and program analysis,Automated Program Repair,Automated Program Repair,Automated Program Repair
+13,When Fine-Tuning LLMs Meets Data Privacy: An Empirical Study of Federated Learning in LLM-Based Program Repair,Automated Program Repair,Automated Program Repair,Automated Program Repair
+14,Supersonic: Learning to generate source code optimizations in C/C++,"Code Generation, Code Optimization, Program Synthesis",Code Optimization,Code Optimization
+15,Enhancing automated program repair with solution design,Automated Program Repair,Automated Program Repair,Automated Program Repair
+16,Comprehensive Fine-Tuning Large Language Models of Code for Automated Program Repair,Automated Program Repair,"Automated Program Repair, Large Language Models for Code Security","Automated Program Repair, Large Language Models for Code Security"
+17,Benchmarking and categorizing the performance of neural program repair systems for Java,Automated Program Repair,Automated Program Repair,Automated Program Repair
+18,Template-guided program repair in the era of large language models,Automated Program Repair,Automated Program Repair,Automated Program Repair
+19,FastFixer: an efficient and effective approach for repairing programming assignments,Automated Program Repair,Automated Program Repair,Automated Program Repair
+20,Harnessing Large Language Models for Curated Code Reviews,Automated Code Review,Automated Code Review,Automated Code Review
+21,PATCH: Empowering Large Language Model with Programmer-Intent Guidance and Collaborative-Behavior Simulation for Automatic Bug Fixing,Automated Program Repair,Automated Program Repair,Automated Program Repair
+22,SUMLLAMA: Efficient Contrastive Representations and Fine-Tuned Adapters for Bug Report Summarization,Code Understanding and Graph Extraction,Code Summarization,
+23,SECURE: Benchmarking Large Language Models for Cybersecurity,"Code Security Benchmarking, Large Language Models for Code Security",Cybersecurity Benchmarking for LLMs,Cybersecurity Benchmarking for LLMs
+24,Evaluating the Generalizability of LLMs in Automated Program Repair,Automated Program Repair,"Automated Program Repair, Benchmark Data Contamination Mitigation","Automated Program Repair, Benchmark Data Contamination Mitigation"
+25,Towards reliable evaluation of neural program repair with natural robustness testing,Automated Program Repair,Automated Program Repair,Automated Program Repair
+26,MORepair: Teaching LLMs to Repair Code via Multi-Objective Fine-Tuning,Automated Program Repair,Automated Program Repair,Automated Program Repair
+28,Generating vulnerability security fixes with Code Language Models,"Automated Program Repair, Code Vulnerability Analysis, Large Language Models for Code Security","Automated Program Repair, Large Language Models for Code Security","Large Language Models for Code Security, Automated Program Repair"
+29,Coast: Enhancing the code debugging ability of llms through communicative agent based data synthesis,"Automated Program Repair, Fault Localization","Fault Localization, Automated Code Review, Automated Program Repair","Fault Localization, Automated Program Repair"
+30,Automated Vulnerability Score Prediction through Lightweight Generative AI,"Vulnerability Scoring, Code Vulnerability Analysis","Vulnerability Scoring, Large Language Models for Code Security","Vulnerability Scoring, Large Language Models for Code Security"
+31,A comparative analysis on using GPT and BERT for automated vulnerability scoring,"Vulnerability Scoring, Code Vulnerability Analysis","Vulnerability Scoring, Large Language Models for Code Security","Vulnerability Scoring, Large Language Models for Code Security"
+32,ReAPR: Automatic program repair via retrieval-augmented large language models,Automated Program Repair,Automated Program Repair,Automated Program Repair
+33,Efficient program optimization through knowledge-enhanced LoRA fine-tuning of large language models,Code Optimization,Code Optimization,Code Optimization
+34,Retrieval Augmented Generation Fine-Tuned LLM Model for Code Recommendations to Mitigate Lock Contention,"Code Generation, Program Synthesis, Automated Program Repair",Code Optimization,"Automated Program Repair, Code Generation, Code Optimization"
+35,Leveraging Generative AI to Enhance Automated Vulnerability Scoring,"Vulnerability Scoring, Code Vulnerability Analysis","Vulnerability Scoring, Large Language Models for Code Security","Vulnerability Scoring, Large Language Models for Code Security"
+36,Just-in-time detection of silent security patches,"Fault Localization, Code Vulnerability Analysis, Code Generation","Code Vulnerability Analysis, Large Language Models for Code Security","Code Vulnerability Analysis, Code Summarization, Large Language Models for Code Security"
+37,Can LLMs Reason About Program Semantics? A Comprehensive Evaluation of LLMs on Formal Specification Inference,"Code Understanding and Graph Extraction, Code Generation, Program Synthesis","LLM Reasoning and Rationale Generation, Program Synthesis","LLM Reasoning and Rationale Generation, Program Synthesis"
+38,Why Personalizing Deep Learning-Based Code Completion Tools Matters,"Program Synthesis, Code Generation",Code Generation,Code Generation
+39,Towards detecting prompt knowledge gaps for improved llm-guided issue resolution,Automated Program Repair,Automated Program Repair,Automated Program Repair
+40,Search-based llms for code optimization,Code Optimization,Code Optimization,Code Optimization
+41,Mercury: A code efficiency benchmark for code large language models,"Code Generation, Program Synthesis",Code Optimization,Code Generation
+42,Investigating Execution-Aware Language Models for Code Optimization,Code Optimization,Code Optimization,Code Optimization
+43,PatchView: Multi-modality detection of security patches,"Security Patch Detection, Code Vulnerability Analysis",Security Patch Detection,Security Patch Detection
+44,Speed Up Your Code: Progressive Code Acceleration Through Bidirectional Tree Editing,Code Optimization,Code Optimization,Code Optimization
+45,DeepCodeGraph: A Language Model for Compile-Time Resource Optimization Using Masked Graph Autoencoders,Code Optimization,Code Understanding and Graph Extraction,Code Optimization
+46,Context-aware prompting for LLM-based program repair,Automated Program Repair,Automated Program Repair,Automated Program Repair
+47,Hierarchical repository-level code summarization for business applications using local llms,Code Summarization,Code Summarization,Code Summarization
+48,Selfcodealign: Self-alignment for code generation,Code Generation,Code Generation,Code Generation
+49,Combining Large Language Models with Static Analyzers for Code Review Generation,"Automated Code Review, Code Understanding and Graph Extraction",Automated Code Review,Automated Code Review
+50,INDICT: Code generation with internal dialogues of critiques for both security and helpfulness,"Code Generation, Program Synthesis, LLM Reasoning and Rationale Generation","Code Generation, Large Language Models for Code Security","Code Generation, LLM Reasoning and Rationale Generation, Large Language Models for Code Security"
+51,On the Effectiveness of LLM-as-a-judge for Code Generation and Summarization,"Code Summarization, Code Generation","Code Generation, Code Summarization","Code Generation, Code Summarization"
+53,SV-TrustEval-C: Evaluating Structure and Semantic Reasoning in Large Language Models for Source Code Vulnerability Analysis,"Code Vulnerability Analysis, Large Language Models for Code Security","Code Vulnerability Analysis, Code Security Benchmarking, LLM Reasoning and Rationale Generation","Code Vulnerability Analysis, Large Language Models for Code Security, Code Security Benchmarking"
+54,Leveraging Open-Source LLMs for Zero-Shot Vulnerability Detection: A Comparative Analysis,Code Vulnerability Analysis,Code Vulnerability Analysis,Code Vulnerability Analysis
+55,Evaluating Large Language Model Application Impacts on Evasive Spectre Attack Detection.,Code Vulnerability Analysis,"Code Vulnerability Analysis, Cybersecurity Benchmarking for LLMs","Code Vulnerability Analysis, Cybersecurity Benchmarking for LLMs"
+56,Ecosystem of large language models for code,,Code Generation,Code Generation
+57,Bridging HCI and AI Research for the Evaluation of Conversational SE Assistants,,,
+58,Insights into resource utilization of code small language models serving with runtime engines and execution providers,Code Generation,,Code Generation
+59,Epicoder: Encompassing diversity and complexity in code generation,"Code Generation, Program Synthesis",Code Generation,Code Generation
+60,CodeContrast: A Contrastive Learning Approach for Generating Coherent Programming Exercises,"Program Synthesis, Code Generation",Program Synthesis,Program Synthesis
+61,SWIFTCODER: Enhancing Code Generation in Large Language Models through Efficiency-Aware Fine-tuning,"Code Generation, Program Synthesis","Code Generation, Code Optimization",Code Generation
+62,ProSec: Fortifying Code LLMs with Proactive Security Alignment,"Code Generation, Program Synthesis, Code Vulnerability Analysis",Large Language Models for Code Security,"Program Synthesis, Large Language Models for Code Security"
+63,Revisiting Chain-of-Thought in Code Generation: Do Language Models Need to Learn Reasoning before Coding?,"Code Generation, LLM Reasoning and Rationale Generation","LLM Reasoning and Rationale Generation, Code Generation","LLM Reasoning and Rationale Generation, Code Generation"
+64,Benchmarking Long-Context Language Models on Long Code Understanding,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction
+65,AnnCoder: A Mti-Agent-Based Code Generation and Optimization Model,"Code Generation, Program Synthesis, Code Optimization","Code Generation, Code Optimization","Code Generation, Code Optimization"
+66,Opencoder: The open cookbook for top-tier code large language models,Code Generation,Code Generation,Code Generation
+67,"Ai-powered, but power-hungry? energy efficiency of llm-generated code",Code Generation,Code Generation,Code Generation
+68,Measuring and Improving the Efficiency of Python Code Generated by LLMs Using CoT Prompting and Fine-Tuning,Code Generation,"LLM Reasoning and Rationale Generation, Code Optimization","Code Generation, LLM Reasoning and Rationale Generation"
+69,When Faster Isn't Greener: The Hidden Costs of LLM-Based Code Optimization,Code Optimization,Code Optimization,Code Optimization
+70,ECCO: Can We Improve Model-Generated Code Efficiency Without Sacrificing Functional Correctness?,"Code Generation, Code Optimization",Code Optimization,"Code Generation, Code Optimization"
+71,LogUpdater: Automated Detection and Repair of Specific Defects in Logging Statements,"Automated Program Repair, Fault Localization",,"Automated Program Repair, Fault Localization"
+72,Optimizing code runtime performance through context-aware retrieval-augmented generation,Code Optimization,Code Optimization,Code Optimization
+73,RAG or Fine-tuning? A Comparative Study on LCMs-based Code Completion in Industry,Code Generation,Code Generation,Code Generation
+74,LLM program optimization via retrieval augmented search,Code Optimization,Code Optimization,Code Optimization
+75,DeCOS: Data-Efficient Reinforcement Learning for Compiler Optimization Selection Ignited by LLM,Code Optimization,Code Optimization,Code Optimization
+76,Fea-bench: A benchmark for evaluating repository-level code generation for feature implementation,Code Generation,Code Generation,Code Generation
+77,"Unlimited Practice Opportunities: Automated Generation of Comprehensive, Personalized Programming Tasks",Code Generation,Program Synthesis,Program Synthesis
+78,Post-Incorporating Code Structural Knowledge into Pretrained Models via ICL for Code Translation,,"Code Generation, Program Synthesis",Code Generation
+79,Acecoder: Acing coder rl via automated test-case synthesis,"Code Generation, Program Synthesis","Code Generation, Program Synthesis","Code Generation, Program Synthesis"
+81,Codei/o: Condensing reasoning patterns via code input-output prediction,LLM Reasoning and Rationale Generation,LLM Reasoning and Rationale Generation,LLM Reasoning and Rationale Generation
+82,"Kodcode: A diverse, challenging, and verifiable synthetic dataset for coding",Code Generation,Code Generation,Code Generation
+83,M2rc-eval: Massively multilingual repository-level code completion evaluation,Code Generation,Code Generation,Code Generation
+84,Brite: Bootstrapping reinforced thinking process to enhance language model reasoning,"Code Generation, LLM Reasoning and Rationale Generation",LLM Reasoning and Rationale Generation,"Code Generation, LLM Reasoning and Rationale Generation"
+85,An empirical study on capability of large language models in understanding code semantics,"Code Summarization, Code Generation",Code Understanding and Graph Extraction,"Code Summarization, Code Generation"
+86,LLM-KG-Bench 3.0: A compass for semantic technology capabilities in the ocean of LLMs,,,Code Generation
+87,Bitsai-cr: Automated code review via llm in practice,Automated Code Review,Automated Code Review,Automated Code Review
+88,DependEval: Benchmarking LLMs for Repository Dependency Understanding,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction
+89,Question Selection for Multi-Modal Code Search Synthesis using Probabilistic Version Spaces,,,
+90,HumanEval Pro and MBPP Pro: Evaluating Large Language Models on Self-invoking Code Generation,"Code Generation, Program Synthesis","Code Generation, LLM Reasoning and Rationale Generation","Code Generation, LLM Reasoning and Rationale Generation"
+91,On Pretraining For Project-Level Code Completion,"Code Generation, Program Synthesis",Code Generation,Code Generation
+92,Synthesizing Software Engineering Data in a Test-Driven Manner,Code Understanding and Graph Extraction,Code Generation,Code Generation
+93,UCP: a unified framework for code generation with pseudocode-based multi-task learning and reinforcement alignment: Y. Wen et al.,Code Generation,Code Generation,Code Generation
+94,Swe-bench multimodal: Do ai systems generalize to visual software domains?,"Automated Program Repair, Code Generation",Automated Program Repair,"Automated Program Repair, Code Generation"
+95,Kernelbench: Can llms write efficient gpu kernels?,Code Generation,Code Optimization,Code Generation
+96,ObscuraCoder: Powering Efficient Code LM Pre-Training Via Obfuscation Grounding,Code Generation,"Code Summarization, Code Understanding and Graph Extraction, Code Generation","Code Generation, Code Vulnerability Analysis, Code Summarization, Code Understanding and Graph Extraction"
+97,EDITLORD: Learning Code Transformation Rules for Code Editing,Code Generation,Code Generation,Code Generation
+98,Enhancing code llm training with programmer attention,"Code Generation, Code Summarization",,"Code Generation, Code Summarization"
+99,Leveraging Human Insights for Enhanced LLM-based Code Repair,Automated Program Repair,Automated Program Repair,Automated Program Repair
+100,Learning Game-Playing Agents with Generative Code Optimization,Code Optimization,,Code Generation
+101,Investigating Reproducibility Challenges in LLM Bugfixing on the HumanEvalFix Benchmark,Automated Program Repair,Automated Program Repair,Automated Program Repair
+102,Correctness Assessment of Code Generated by Large Language Models Using Internal Representations,"Code Generation, Program Synthesis",Code Generation,Code Generation
+103,RECoRD: A Multi-Agent LLM Framework for Reverse Engineering Codebase to Relational Diagram,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction
+104,Autopresent: Designing structured visuals from scratch,"Code Generation, Program Synthesis",Code Generation,Code Generation
+105,Di-bench: Benchmarking large language models on dependency inference with testable repositories at scale,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction,Code Understanding and Graph Extraction
+106,Syncmind: Measuring agent out-of-sync recovery in collaborative software engineering,"Code Generation, Fault Localization",,
+107,SWE-Dev: Building Software Engineering Agents with Training and Inference Scaling,Code Generation,Code Generation,Code Generation
+108,Coding Agents with Multimodal Browsing are Generalist Problem Solvers,Code Generation,Code Generation,Code Generation
+109,CodeV: Issue Resolving with Visual Data,Automated Program Repair,"Automated Program Repair, Code Generation","Automated Program Repair, Code Generation"
+110,ELABORATION: A Comprehensive Benchmark on Human-LLM Competitive Programming,,,
