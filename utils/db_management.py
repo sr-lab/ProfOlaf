@@ -16,7 +16,7 @@ class SelectionStage(Enum):
     
 
 
-def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False):
+def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False, search_method: str = ""):
     """
     Get the article data from the pub.
     """
@@ -36,6 +36,7 @@ def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage =
     pub_info["new_pub"] = new_pub
     pub_info["selected"] = selected
     pub_info["iteration"] = iteration
+    pub_info["search_method"] = search_method
     return ArticleData(**pub_info)
 
 @dataclass
@@ -65,6 +66,7 @@ class ArticleData:
     title_reason: str = ""
     content_reason: str = ""
     duplicate: bool = False
+    search_method: str = ""
     dict = asdict
 
     def set_iteration(self, iteration: int):
@@ -75,6 +77,8 @@ class ArticleData:
         self.bibtex = bibtex
     def set_duplicate(self, duplicate: bool):
         self.duplicate = duplicate
+    def set_search_method(self, search_method: str):
+        self.search_method = search_method
     def __hash__(self):
         # Use id as the primary hash since it should be unique
         return hash(self.id)
@@ -110,7 +114,9 @@ class DBManager:
             current_iteration = self.cursor.fetchone()[0]
             self.cursor.execute(f"SELECT MAX(selected) FROM {table_name} WHERE iteration = ?", (current_iteration,))
             max_selected = self.cursor.fetchone()[0]
-            return current_iteration, max_selected
+            self.cursor.execute(f"SELECT search_method FROM {table_name} WHERE iteration = ? WITH LIMIT 1", (current_iteration,))
+            search_method = self.cursor.fetchone()[0]
+            return current_iteration, max_selected, search_method
         except Exception as e:
             self.conn.rollback()
 

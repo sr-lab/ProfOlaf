@@ -5,9 +5,10 @@ from utils.db_management import DBManager
 def check_iteration_and_stage(db_path: str):
     stages = ["Fetched", "Metadata Filtered", "Title Filtered", "Content Filtered"]
     db_manager = DBManager(db_path)
-    current_iteration, max_selected = db_manager.check_current_iteration()
+    current_iteration, max_selected, search_method = db_manager.check_current_iteration()
     print(f"Current iteration: {current_iteration}")
     print(f"Stage: {stages[max_selected]}")
+    print(f"Search method: {search_method}")
     
 def parse_args():
     parser = argparse.ArgumentParser()

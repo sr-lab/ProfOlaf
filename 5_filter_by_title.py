@@ -2,8 +2,13 @@ import argparse
 import json
 from utils.db_management import DBManager, SelectionStage
 
+from utils.pretty_print_utils import pretty_print, format_color_string, prompt_input
+
+
 with open("search_conf.json", "r") as f:
     search_conf = json.load(f)
+
+
 
 def choose_elements(articles, db_manager, iteration): 
     """
@@ -11,22 +16,22 @@ def choose_elements(articles, db_manager, iteration):
     """
     updated_data = []
     for i, article in enumerate(articles):
-        if article.selected >= SelectionStage.TITLE_APPROVED.value or article.title_filtered_out == True:
-            print(f"\n({i+1}/{len(articles)}) Skipping Article {article.title}. Selected: {article.selected}, Title Filtered Out: {article.title_filtered_out}")
-            continue
         print(f"\n({i+1}/{len(articles)})")
+        title_string = format_color_string(article.title, "magenta", "bold")
+        if article.selected >= SelectionStage.TITLE_APPROVED.value or article.title_filtered_out == True:
+            skip_reason = format_color_string("Article already selected", "green", "bold") if article.selected >= SelectionStage.TITLE_APPROVED.value else format_color_string("Article already filtered out", "red", "bold")
+            pretty_print(f"Skipping Article {title_string}: {skip_reason}")
         while True:
-            print(f"Title: {article.title}")
-            print(f"ID: {article.id}")
-            user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
+            pretty_print(f"Title: {title_string}")
+            user_input = prompt_input(f"Do you want to keep this element? (y/n/s for skip)").strip().lower()
             if user_input == 'y':
-                user_reason = input(f"Please enter the reason for the selection (enter to skip): ").strip()
+                user_reason = prompt_input(f"Please enter the reason for the selection (enter to skip)").strip()
                 article.selected = SelectionStage.TITLE_APPROVED
                 updated_data.append((article.id, article.selected, "selected"))
                 updated_data.append((article.id, user_reason, "title_reason"))
                 break
             elif user_input == 'n':
-                user_reason = input(f"Please enter the reason for the rejection (enter to skip): ").strip()
+                user_reason = prompt_input(f"Please enter the reason for the rejection (enter to skip)").strip()
                 article.title_filtered_out = True
                 updated_data.append((article.id, article.title_filtered_out, "title_filtered_out"))
                 updated_data.append((article.id, user_reason, "title_reason"))
@@ -34,7 +39,7 @@ def choose_elements(articles, db_manager, iteration):
             elif user_input == 's':
                 break
             else:
-                print("Please enter 'y' for yes or 'n' for no.")
+                pretty_print("Please enter 'y' for yes or 'n' for no.")
 
         db_manager.update_batch_iteration_data(iteration, updated_data)
         
@@ -46,7 +51,7 @@ def main(iteration, db_path, refresh):
         )
     
     if refresh:
-        print("TODO: Refresh the database at iteration", iteration, "for the title check")
+        pretty_print("TODO: Refresh the database at iteration", iteration, "for the title check")
   
     choose_elements(articles, db_manager, iteration)
 

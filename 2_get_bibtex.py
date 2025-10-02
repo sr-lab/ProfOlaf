@@ -11,6 +11,8 @@ from utils.db_management import (
     ArticleData,
     SelectionStage,
 )
+
+from tqdm import tqdm
 from utils.proxy_generator import get_proxy
 import bibtexparser
 import concurrent.futures
@@ -62,7 +64,6 @@ def get_alternative_bibtexes_cached(pub):
 
     article_search = ArticleSearch(GoogleScholarSearchMethod())
     versions = article_search.get_all_versions_bibtexes(pub)
-    print("Versions:", versions)
     for version in versions:
         venue = get_bibtex_venue(version)
         if check_valid_venue(venue):
@@ -166,18 +167,15 @@ def get_bibtex_single(article: ArticleData) -> Tuple[str, str]:
     Returns (article_id, bibtex_string)
     """
 
-    print("Getting dblp bibtex")
     dblp_bibtex = _get_dblp_bibtex(article)
     if dblp_bibtex is not None and dblp_bibtex != "":
         return article.id, dblp_bibtex
     
-    print("Getting bibtex from google scholar")
     scholar_bibtex, pub = _get_main_bibtex(article)
     if scholar_bibtex is not None and scholar_bibtex != "" and pub is None:
         return article.id, scholar_bibtex
 
     if pub is not None:
-        print("Getting alternative bibtex")
         alternative_bibtex = _get_alternative_bibtex(pub)
         if alternative_bibtex is not None and alternative_bibtex != "":
             return article.id, alternative_bibtex
@@ -238,36 +236,27 @@ def process_articles_optimized(iteration: int, articles: List[ArticleData],
     if use_parallel and len(articles_to_process) > 1:
         print(f"Using parallel processing with {max_workers} workers...")
         # Process in batches to avoid overwhelming the API
-        for i in range(0, len(articles_to_process), batch_size):
+        for i in tqdm(range(0, len(articles_to_process), batch_size), desc="Getting bibtex for articles (parallel)"):
             batch = articles_to_process[i:i + batch_size]
-            print(f"Processing batch {i//batch_size + 1}/{(len(articles_to_process) + batch_size - 1)//batch_size}")
             
-            # Process batch in parallel
             results = process_articles_batch(batch, max_workers)
             
-            # Safety check - ensure results is not None
             if results is None:
                 print(f"Warning: process_articles_batch returned None for batch {i//batch_size + 1}")
                 results = []
             
-            # Batch update database
             update_data = [(article_id, bibtex, "bibtex") for article_id, bibtex in results]
             db_manager.update_batch_iteration_data(iteration, update_data)
             print(f"Batch {i//batch_size + 1} completed and saved to database.")
     else:
         print("Using sequential processing...")
-        # Sequential processing with batch updates
         results = []
-        for i, article in enumerate(articles_to_process):
-            print(f"Processing {i+1}/{len(articles_to_process)}: {article.title}")
-            
+        desc = f"Getting bibtex for articles (sequential with batch size {batch_size})"
+        for i, article in tqdm(enumerate(articles_to_process), desc=desc):
             article_id, bibtex = get_bibtex_single(article)
             results.append((article_id, bibtex, "bibtex"))
-                        
-            # Update database in batches
             if len(results) >= batch_size or i == len(articles_to_process) - 1:
                 db_manager.update_batch_iteration_data(iteration, results)
-                print(f"Saved batch of {len(results)} articles to database.")
                 results = []
 
 if __name__ == "__main__":
@@ -276,7 +265,7 @@ if __name__ == "__main__":
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     parser.add_argument('--batch_size', help='batch size for processing', type=int, default=20)
     parser.add_argument('--max_workers', help='max workers for parallel processing', type=int, default=3)
-    parser.add_argument('--no_parallel', help='disable parallel processing', action='store_true')
+    parser.add_argument('--parallel', help='disable parallel processing', action='store_true')
     args = parser.parse_args()
 
     db_manager = DBManager(args.db_path)
@@ -294,7 +283,7 @@ if __name__ == "__main__":
         articles=articles,
         batch_size=args.batch_size,
         max_workers=args.max_workers,
-        use_parallel=not args.no_parallel
+        use_parallel=args.parallel
     )
     
     print("Processing completed!")

@@ -2,6 +2,7 @@ import sys
 import argparse
 from enum import Enum
 from utils.db_management import DBManager, SelectionStage
+from utils.pretty_print_utils import pretty_print, format_color_string
 
 class DisagreementStage(Enum):
     TITLE = SelectionStage.TITLE_APPROVED.value
@@ -49,16 +50,24 @@ def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStag
             else:
                 not_selected_by.append(rater.replace(".db", ""))
         print("\n--------------------------------")
-        print(f"Title: {disagreement.title}")
-        print(f"Url: {disagreement.pub_url}")
-        print(f"Selected by:")
+        title_string = format_color_string(disagreement.title, "magenta", "bold")
+        url_string = format_color_string(disagreement.pub_url, "blue", "bold")
+        selected_by_string = format_color_string('Selected by:', 'green', 'bold')
+        pretty_print(f"Title: {title_string}")
+        pretty_print(f"Url: {url_string}")
+        pretty_print(f"{selected_by_string}")
         for rater in selected_by:
             reason = reasons[rater] if reasons[rater] != "" else "No reason provided"
-            print(f"{rater}: {reason}")
-        print(f"Not selected by:")
+            rater_string = format_color_string(rater, "green", "bold")
+            reason_string = format_color_string(reason, "green", "")
+            pretty_print(f"{rater_string}: {reason_string}")
+        not_selected_by_string = format_color_string('Not selected by:', 'red', 'bold')
+        pretty_print(f"{not_selected_by_string}:")
         for rater in not_selected_by:
             reason = reasons[rater] if reasons[rater] != "" else "No reason provided"
-            print(f"{rater}: {reason}")
+            rater_string = format_color_string(rater, "red", "bold")
+            reason_string = format_color_string(reason, "red", "")
+            pretty_print(f"{rater_string}: {reason_string}")
 
         while True:
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
