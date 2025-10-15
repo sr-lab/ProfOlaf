@@ -1,6 +1,6 @@
 {
     "openai": {
-      "api_key": "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",
+      "api_key": "",
       "api_key_env": "OPENAI_API_KEY",
       "model": "gpt-5-nano",
       "temperature": 1.0,
