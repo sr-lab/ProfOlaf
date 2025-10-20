@@ -1,11 +1,11 @@
 {
     "openai": {
-      "api_key": "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",
+      "api_key": "",
       "api_key_env": "OPENAI_API_KEY",
       "model": "gpt-5-nano",
       "temperature": 1.0,
       "max_output_tokens": 5000,
-      "context_length": 16385,
+      "context_length": 20000,
       "pricing_per_1k_tokens": {
         "input": 0.0015,
         "output": 0.002
