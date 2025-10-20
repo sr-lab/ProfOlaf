@@ -18,7 +18,7 @@ def choose_elements(articles, db_manager, iteration):
     for i, article in enumerate(articles):
         print(f"\n({i+1}/{len(articles)})")
         title_string = format_color_string(article.title, "magenta", "bold")
-        if article.selected >= SelectionStage.TITLE_APPROVED.value or article.title_filtered_out == True:
+        if int(article.selected) >= int(SelectionStage.TITLE_APPROVED.value) or article.title_filtered_out == True:
             skip_reason = format_color_string("Article already selected", "green", "bold") if article.selected >= SelectionStage.TITLE_APPROVED.value else format_color_string("Article already filtered out", "red", "bold")
             pretty_print(f"Skipping Article {title_string}: {skip_reason}")
         while True:
