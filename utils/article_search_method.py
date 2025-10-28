@@ -20,6 +20,7 @@ GS_SEARCH_TAG = "[Google Scholar]"
 class SearchMethod(Enum):
     GOOGLE_SCHOLAR = "google_scholar"
     SEMANTIC_SCHOLAR = "semantic_scholar"
+    DBLP_SEARCH = "dblp"
     
     def get_search_class(self):
         """Get the corresponding search method class for this enum value."""
@@ -27,6 +28,8 @@ class SearchMethod(Enum):
             return GoogleScholarSearchMethod
         elif self == SearchMethod.SEMANTIC_SCHOLAR:
             return SemanticScholarSearchMethod
+        elif self == SearchMethod.DBLP_SEARCH:
+            return DBLPSearchMethod
         else:
             raise ValueError(f"Unknown search method: {self}")
     
@@ -66,7 +69,7 @@ class ArticleSearchMethod(ABC):
         raise NotImplementedError(f"{self.__class__.__name__} does not support get_article_data")
 
 class GoogleScholarSearchMethod(ArticleSearchMethod):
-    name = "google_scholar"
+    name = SearchMethod.GOOGLE_SCHOLAR.value
 
     def get_article_data(self, pub, pub_id, iteration: int = 0, selected: SelectionStage = SelectionStage.NOT_SELECTED, new_pub: bool = False, search_method: str = ""):
             """
@@ -143,7 +146,7 @@ class GoogleScholarSearchMethod(ArticleSearchMethod):
                 m = re.search("cites=[\d+,]*", pub["citedby_url"])
                 pub_id = m.group()[6:]
             
-            articles.append(self.get_article_data(pub, pub_id, iteration, new_pub=True))
+            articles.append(self.get_article_data(pub, pub_id, iteration, new_pub=True, search_method=self.name))
         return articles
 
     def get_bibtex(self, pub):
@@ -163,7 +166,7 @@ class GoogleScholarSearchMethod(ArticleSearchMethod):
         return versions
 
 class DBLPSearchMethod(ArticleSearchMethod):
-    name = "dblp"
+    name = SearchMethod.DBLP_SEARCH.value
     DBLP_URL = "https://dblp.org/search/publ/api?q={query}&format=json"
     DBLP_BIB_URL = "https://dblp.org/rec/{key}.bib"
     
@@ -215,8 +218,9 @@ class DBLPSearchMethod(ArticleSearchMethod):
         return []
 
 class SemanticScholarSearchMethod(ArticleSearchMethod):
-    name = "semantic_scholar"
+    name = SearchMethod.SEMANTIC_SCHOLAR.value
     search_query = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}&fields=title,authors,paperId,citationStyles,venue,year,url"
+    bibtex_query = "https://api.semanticscholar.org/graph/v1/paper/{paper_id}?fields=citationStyles"
     snowballing_query = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}&fields=title,authors,paperId,citations,references"
     citations_query = "https://api.semanticscholar.org/graph/v1/paper/{paper_id}/citations?fields=title,authors,paperId,venue,year,openAccessPdf"
     references_query = "https://api.semanticscholar.org/graph/v1/paper/{paper_id}/references?fields=title,authors,paperId,venue,year,url"
@@ -231,7 +235,7 @@ class SemanticScholarSearchMethod(ArticleSearchMethod):
             "authors": pub.get("authors", ""),
             "venue": pub.get("venue", ""),
             "pub_year": str(pub.get("pub_year", "0")),
-            "pub_url": pub.get("eprint_url", ""),
+            "pub_url": pub.get("eprint_url", pub.get("pub_url", "")),
             "num_citations": pub.get("citations", 0),
             "citedby_url": pub.get("citedby_url", ""),
             "url_related_articles": pub.get("url_related_articles", ""),
@@ -281,13 +285,27 @@ class SemanticScholarSearchMethod(ArticleSearchMethod):
         }
     
     def get_bibtex(self, article: ArticleData):
-        response = requests.get(self.search_query.format(query=article.title), timeout=60)
-        response.raise_for_status()
-        if response.status_code != 200:
-            print(f"{SS_SEARCH_TAG} Bibtex not found for", article.title)
+        initial_delay = 1
+        response = requests.get(self.bibtex_query.format(paper_id=article.id), timeout=60)
+        
+        while response.status_code == 429:
+            print(f"{SS_SEARCH_TAG} Rate limit exceeded for", article.title)
+            retry_after = response.headers.get("Retry-After")
+            retry_after = int(response.headers.get("Retry-After", initial_delay))
+            print(f"Rate limited. Waiting {retry_after} seconds...")
+            time.sleep(retry_after)
+            response = requests.get(self.bibtex_query.format(paper_id=article.id), timeout=60)
+            initial_delay *= 2 
+        try:
+            response.raise_for_status()
+            if response.status_code != 200:
+                print(f"{SS_SEARCH_TAG} Bibtex not found for", article.title)
+                return None
+            data = response.json()
+            return data["citationStyles"]["bibtex"]
+        except Exception as e:
+            print(f"{SS_SEARCH_TAG} Error getting bibtex for", article.title, ":", e)
             return None
-        data = response.json()
-        return data
     
     def _get_citedby(self, citedby: str):
         all_citations = []

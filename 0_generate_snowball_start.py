@@ -69,7 +69,6 @@ def generate_snowball_start(input_file: str, iteration: int, delay: float = 2.0,
     seen_titles = []
     for i, title in tqdm(enumerate(titles, 1), total=len(titles), desc=f"Searching with {search_method.value}"):      
         article_data = article_search.search(title)
-        print("Article data: ", article_data)
         if article_data:
             article_data.set_iteration(iteration)
             article_data.set_selected(SelectionStage.CONTENT_APPROVED)

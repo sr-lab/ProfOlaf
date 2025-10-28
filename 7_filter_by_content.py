@@ -11,7 +11,7 @@ def choose_elements(articles, db_manager, iteration):
     """
     updated_data = []
     for i, article in enumerate(articles):
-        if article.selected >= SelectionStage.CONTENT_APPROVED.value or article.abstract_filtered_out == True:
+        if article.selected >= str(SelectionStage.CONTENT_APPROVED.value) or article.abstract_filtered_out == True:
             continue
 
         title = article.title

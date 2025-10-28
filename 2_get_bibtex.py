@@ -22,7 +22,9 @@ import requests
 from utils.article_search_method import (
     ArticleSearch, 
     GoogleScholarSearchMethod, 
+    SemanticScholarSearchMethod,
     DBLPSearchMethod,
+    SearchMethod,
 )
 
 load_dotenv()
@@ -161,13 +163,23 @@ def _get_alternative_bibtex(pub: dict) -> Tuple[str, str]:
         
     return None
 
-def get_bibtex_single(article: ArticleData) -> Tuple[str, str]:
+def get_bibtex_single(article: ArticleData, search_method: SearchMethod = SearchMethod.GOOGLE_SCHOLAR, delay_between_requests: float = 1.0) -> Tuple[str, str]:
     """
     Get the bibtex string for a single article.
     Returns (article_id, bibtex_string)
     """
 
-    dblp_bibtex = _get_dblp_bibtex(article)
+    time.sleep(delay_between_requests)
+    if search_method == SearchMethod.SEMANTIC_SCHOLAR.value:
+        article_search = ArticleSearch(SemanticScholarSearchMethod())
+        bibtex = article_search.get_bibtex(article)
+        if bibtex is not None and bibtex != "":
+            return article.id, bibtex
+        else:
+            return article.id, "NO_BIBTEX"
+
+
+    dblp_bibtex = _get_dblp_bibtex(article, search_method)
     if dblp_bibtex is not None and dblp_bibtex != "":
         return article.id, dblp_bibtex
     
@@ -220,7 +232,7 @@ def process_articles_batch(articles: List[ArticleData], max_workers: int = 3) ->
 
 def process_articles_optimized(iteration: int, articles: List[ArticleData], 
                               batch_size: int = 10, max_workers: int = 3, 
-                              use_parallel: bool = True) -> None:
+                              use_parallel: bool = True, search_method: SearchMethod = SearchMethod.GOOGLE_SCHOLAR, delay: float = 1.0) -> None:
     """
     Optimized processing of articles with batch updates and optional parallel processing.
     """
@@ -253,7 +265,7 @@ def process_articles_optimized(iteration: int, articles: List[ArticleData],
         results = []
         desc = f"Getting bibtex for articles (sequential with batch size {batch_size})"
         for i, article in tqdm(enumerate(articles_to_process), desc=desc):
-            article_id, bibtex = get_bibtex_single(article)
+            article_id, bibtex = get_bibtex_single(article, search_method, delay_between_requests=delay)
             results.append((article_id, bibtex, "bibtex"))
             if len(results) >= batch_size or i == len(articles_to_process) - 1:
                 db_manager.update_batch_iteration_data(iteration, results)
@@ -263,9 +275,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get bibtex for articles')
     parser.add_argument('--iteration', help='iteration number', type=int)
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
-    parser.add_argument('--batch_size', help='batch size for processing', type=int, default=20)
+    parser.add_argument('--batch_size', help='batch size for processing', type=int, default=1)
     parser.add_argument('--max_workers', help='max workers for parallel processing', type=int, default=3)
     parser.add_argument('--parallel', help='disable parallel processing', action='store_true')
+    parser.add_argument('--delay', help='delay between requests', type=float, default=1.0)
+    parser.add_argument(
+        '--search_method', 
+        help='Search method to use', 
+        type=str, 
+        default=search_conf["search_method"],
+        choices=[method.value for method in SearchMethod]
+    )
     args = parser.parse_args()
 
     db_manager = DBManager(args.db_path)
@@ -283,7 +303,9 @@ if __name__ == "__main__":
         articles=articles,
         batch_size=args.batch_size,
         max_workers=args.max_workers,
-        use_parallel=args.parallel
+        use_parallel=args.parallel,
+        search_method=args.search_method,
+        delay=args.delay
     )
     
     print("Processing completed!")

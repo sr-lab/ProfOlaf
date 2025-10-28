@@ -114,10 +114,11 @@ class DBManager:
             current_iteration = self.cursor.fetchone()[0]
             self.cursor.execute(f"SELECT MAX(selected) FROM {table_name} WHERE iteration = ?", (current_iteration,))
             max_selected = self.cursor.fetchone()[0]
-            self.cursor.execute(f"SELECT search_method FROM {table_name} WHERE iteration = ? WITH LIMIT 1", (current_iteration,))
+            self.cursor.execute(f"SELECT search_method FROM {table_name} WHERE iteration = ? LIMIT 1", (current_iteration,))
             search_method = self.cursor.fetchone()[0]
             return current_iteration, max_selected, search_method
         except Exception as e:
+            print(f"Error checking current iteration: {e}")
             self.conn.rollback()
 
     def create_iterations_table(self):
@@ -283,13 +284,13 @@ class DBManager:
     def update_iteration_data(self, iteration: int, article_id: str, **kwargs):
         table_name = "iterations"
         try:
-            columns = ', '.join(kwargs.keys())
-            placeholders = ', '.join(['?'] * len(kwargs))
-            sql_query = f"UPDATE {table_name} SET {columns} = {placeholders} WHERE id = ? and iteration = ?"
+            assignments = ', '.join([f"{key} = ?" for key in kwargs.keys()])
+            sql_query = f"UPDATE {table_name} SET {assignments} WHERE id = ? and iteration = ?"
             for key, value in kwargs.items():
                 if hasattr(value, 'value'):  # Handle enum values
                     kwargs[key] = value.value
                 elif isinstance(value, (list, dict)):
+                    print("is dict")
                     kwargs[key] = json.dumps(value)
                 elif value is None:
                     kwargs[key] = ""

@@ -77,11 +77,11 @@ def search_rank_databases(venue: str):
         print("\n", table)
 
         while True:
-            final_rank = prompt_input("Enter the rank for the venue (leave it blank to go back to manual input) ")
+            final_rank = prompt_input("Enter the rank for the venue (leave it blank to try other search) ")
             if final_rank and final_rank in search_conf["venue_rank_list"] or final_rank and final_rank == "NA":
                 break
             elif not final_rank:
-                return None
+                return search_rank_databases(venue)
             else:
                 print("Invalid rank.")
                 continue

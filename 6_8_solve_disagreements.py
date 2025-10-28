@@ -16,10 +16,13 @@ def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStag
     db_managers = {search_db: DBManager(search_db) for search_db in search_dbs}
     
     selected_pubs = {search_db: db_manager.get_iteration_data(iteration=iteration, selected=selection_stage) for search_db, db_manager in db_managers.items()}
+    print(selected_pubs["ss_test.db"])
     
     all_pubs = set()
     for pubs in selected_pubs.values():
         all_pubs.update(pubs)
+
+    # disagreements: dictionary that contains for each rater the set of publications that he agreed but not everyone agreed on
     disagreements = {}
     for rater, pubs in selected_pubs.items():
         rater_unique_pubs = []
@@ -41,14 +44,20 @@ def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStag
         not_selected_by = []
         reasons = {}
         for rater in search_dbs:
-        
             original_rating = db_managers[rater].get_iteration_data(iteration=iteration, id=disagreement.id)[0]
-            print("original rating: ", rater, original_rating.selected)
+            if original_rating.title != "LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language Models for Code":
+                continue
+            print(original_rating.title)
+            print(original_rating.selected)
+            print(selection_stage.value)
             reasons[rater.replace(".db", "")] = original_rating.title_reason if selection_stage == DisagreementStage.TITLE else original_rating.content_reason
-            if original_rating.selected == selection_stage.value:
+            if int(original_rating.selected) == int(selection_stage.value):
                 selected_by.append(rater.replace(".db", ""))
             else:
                 not_selected_by.append(rater.replace(".db", ""))
+
+        print("selected by: ", selected_by)
+        print("not selected by: ", not_selected_by)
         print("\n--------------------------------")
         title_string = format_color_string(disagreement.title, "magenta", "bold")
         url_string = format_color_string(disagreement.pub_url, "blue", "bold")
@@ -73,7 +82,11 @@ def solve_disagreements(iteration, search_dbs, selection_stage: DisagreementStag
             user_input = input(f"Do you want to keep this element? (y/n/s for skip): ").strip().lower()
             if user_input == 'y':
                 for rater in search_dbs:
-                    db_managers[rater].update_iteration_data(iteration, disagreement.id, selected=selection_stage.value)
+                    reasonings = {rater.replace(".db", ""): reasons[rater.replace(".db", "")] for rater in search_dbs}
+                    if selection_stage == DisagreementStage.TITLE:
+                        db_managers[rater].update_iteration_data(iteration, disagreement.id, selected=selection_stage.value, title_reason=reasonings)
+                    else:
+                        db_managers[rater].update_iteration_data(iteration, disagreement.id, selected=selection_stage.value, content_reason=reasonings)
                 break
             elif user_input == 'n':
                 for rater in search_dbs:
