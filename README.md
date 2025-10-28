@@ -3,10 +3,9 @@
 
 ![ProfOlaf Logo](banner.webp)
 
-The **ProfOlaf** tool was built to help researchers with literature **snowballing**. It lets you define a reusable search configuration (time window, source/venue filters, paths, optional proxy). It ingests seed titles from structured or plain-text inputs, queries scholarly sources, and normalizes records.
-It stores initial results and “seen” items in your data store, with progress reporting and request throttling to minimize rate limits.
+The **ProfOlaf** tool was built to help researchers with literature reviews. It automates the process of snowballing articles through an initial seed, and helps raters through the process of screening.
 
-## Step 0 - Generating the Search Configuration
+## Setup - Generating the Search Configuration
 
 **`generate_search_conf.py`** is used to interactively create a `search_conf.json` file that stores all configuration parameters needed for scraping and data collection.
 
@@ -36,6 +35,7 @@ Enter the proxy key (or the env variable name): MY_PROXY_KEY
 Enter the initial file: seed.txt
 Enter the db path: ./data/database.db
 Enter the path to the final csv file: ./results/output.csv
+Enter the search method used: google scholar
 ```
 
 **Example Output** (`search_conf.json`)
@@ -46,18 +46,20 @@ Enter the path to the final csv file: ./results/output.csv
   "venue_rank_list": ["A", "B1"],
   "proxy_key": "MY_PROXY_KEY",
   "initial_file": "seed.txt",
-  "db_path": "./data/database.db"
+  "db_path": "./data/database.db",
+  "csv_path": " ./results/output.csv",
+  "search_method": "google_scholar"
 }
 ```
 
 > [!NOTE]  
-> The proxy key is optional (you can skip it if not required)
-> 
+> The proxy key is only required when using google scholar as the search method.
+>
 > Ensure that the initial file, DB path, and CSV path are accessible from your environment
 
-## Step 1 — Generate Snowball Starting Points
+## Step 0 — Generate Snowball Starting Points
 
-**`0_generate_snowball_start.py`** reads paper titles from a file, looks them up on Google Scholar (via the `scholarly` library), and writes the resulting initial publications and seen titles into your database for iteration 0 of the snowballing process.
+**`0_generate_snowball_start.py`** reads paper titles from a file, looks them up on a search database(via the `scholarly` library for google scholar or the semantic scholar api for semantic scholar), and writes the resulting initial publications into your database for iteration 0 of the snowballing process.
 
 ### What it does
 - Loads config from **`search_conf.json`** (created in Step 1).
@@ -65,34 +67,9 @@ Enter the path to the final csv file: ./results/output.csv
   - **JSON:** `{"papers": [{"title": "..."}, ...]}`
   - **TXT:** one title per line
 - Queries Google Scholar for each title and builds a normalized record.
-- Inserts results into the DB using `utils.db_management`:
-  - `insert_iteration_data(initial_pubs)`
-  - `insert_seen_titles_data(seen_titles)`
 - Respects a delay between requests to reduce rate limiting
 
-> [!IMPORTANT]
-> If Google Scholar doesn’t return a cited-by URL/ID, the script still stores the paper using an **MD5 of the title** as a fallback identifier.
-
 ---
-
-### Requirements
-- Python **3.8+**
-- Packages: `scholarly`, `tqdm`, `requests`, `python-dotenv`
-- Local modules:
-  - `utils.proxy_generator.get_proxy`
-  - `utils.db_management` (`DBManager`, `get_article_data`, `initialize_db`, `SelectionStage`)
-- Config file: **`search_conf.json`** (from Step 1) with:
-  ```json
-  {
-    "start_year": 2020,
-    "end_year": 2024,
-    "venue_rank_list": ["A", "B1"],
-    "proxy_key": "MY_PROXY_KEY_OR_ENV_NAME",
-    "initial_file": "accepted_papers.json or seed_titles.txt",
-    "db_path": "./data/database.db"
-  }
-
-- (Optional) `.env` if your `proxy_key` refers to an environment variable.
 
 ## Accepted input formats
 
@@ -112,7 +89,6 @@ Enter the path to the final csv file: ./results/output.csv
 Awesome Paper Title 1
 Another Great Title 2
 ```
-
 ---
 
 ### Usage
@@ -136,30 +112,6 @@ python 0_generate_snowball_start.py \
 
 ---
 
-### Output / Side effects
-
-- Inserts **iteration 0** publications into the DB
-- Tracks **seen titles** as `(title, id)` pairs (ID may be Google Scholar’s cited-by ID or a hash fallback)
-- Progress bar shown via `tqdm`
-
----
-
-### Proxy & rate limiting
-
-- Proxy is resolved via `utils.proxy_generator.get_proxy(search_conf["proxy_key"])`
-- Use a working proxy and keep a **non-zero delay** to avoid blocking
-
----
-
-### Troubleshooting
-
-- **“Unsupported file type”** → Use `.json` with the `"papers"` format or a `.txt` with one title per line  
-- **No results for a title** → The script continues; that title won’t be added 
-- **Rate limited / Captcha** → Increase `--delay`, verify proxy, or rotate proxies  
-- **Env var proxy** → Put it in `.env` (loaded by `python-dotenv`) or export it in your shell
-
----
-
 ### Pipeline context
 
 1. **Step 1:** Generate `search_conf.json` with `generate_search_conf.py`
@@ -167,9 +119,13 @@ python 0_generate_snowball_start.py \
 3. **Next:** Continue with your snowballing/expansion scripts using the stored iteration 0 results
 
 
-## Step 2 — Expand Citations for Iteration *N*
+## Step 1 — Snowballing
 
-`1_start_iteration.py` takes the seed publications from the **previous iteration** and expands them by fetching their **citing papers** from Google Scholar (via `scholarly`). The new papers are stored in the DB as the results of the current iteration.
+`1_start_iteration.py` takes the seed publications from the **previous iteration** and fetches the citations (forward snowballing) and references (backward snowballing) for each one.
+
+> [!NOTE]  
+> The google scholar search method only supports forward snowballing.
+> For both backward and forward snowballing, use semantic scholar as the search_method
 
 ---
 
@@ -187,23 +143,6 @@ get_iteration_data(iteration=ITERATION-1, selected=SelectionStage.NOT_SELECTED)
 -- ```insert_seen_titles_data([(title, id), ...])´´´ for deduping
 - Uses **exponential backoff** (starts at 30s) on failures to reduce rate limiting
 - If a paper has no ```citedby_url```, falls back to a **SHA-256 hash of the title** as its ID
-
-> [!NOTE]  
-> Seeds without a numeric citedby ID are skipped
->
->Titles not present in ```seen_titles``` (per ```db_manager.get_seen_title(...)```) are skipped by this script
-  
----
-
-### Requirements
-
-- Python 3.8+
-- Packages: `scholarly`, `python-dotenv`
-- Local modules:  
-  - `utils.proxy_generator.get_proxy`  
-  - `utils.db_management` (`DBManager`, `get_article_data`, `initialize_db`, `SelectionStage`)
-- Config: `search_conf.json` created in Step 1  
-  (must include `proxy_key` and `db_path`)
 
 ---
 
@@ -237,13 +176,6 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
 
 ---
 
-### Proxy & Rate Limiting
-
-- Proxy is resolved via `get_proxy(search_conf["proxy_key"])` (supports env-based keys; `.env` loaded by `python-dotenv`).
-- Google Scholar may throttle; the script retries with **exponential backoff** (30s → 60s → 120s ...).
-
----
-
 ### Troubleshooting
 
 - **“No citations found”**: The seed’s `citedby` page has zero results—this is normal for some papers.
@@ -252,16 +184,9 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
 
 ---
 
-### Pipeline context
+## Step 2 — Fetch BibTeX for Iteration *N*
 
-1. **Step 1:** Create `search_conf.json` with `generate_search_conf.py`  
-2. **Step 2:** Seed iteration 0 with `0_generate_snowball_start.py`  
-3. **Step 3 (this script):** `1_start_iteration.py` → expand citations for iteration *N* using seeds from *N-1*  
-4. **Next:** Repeat for subsequent iterations or run your filtering/selection stages
-
-## Step 3 — Fetch BibTeX for Iteration *N*
-
-`2_get_bibtex.py` enriches the papers in **iteration N** by fetching their **BibTeX** from Google Scholar (via `scholarly`) and updating your database.
+`2_get_bibtex.py` enriches the papers in **iteration N** by fetching their **BibTeX** from Google Scholar (via `scholarly`) and updating your database. The information present in the bibtex is necessary for the metadata screening step
 
 ---
 
@@ -275,25 +200,6 @@ python 1_start_iteration.py --iteration 2 --db_path ./data/database.db
   3. If the venue looks like **arXiv/CoRR**, it tries to find a **non-arXiv version** by checking all versions (`scholarly.get_all_versions`) and selecting one with a proper venue (conference/journal)
   4. Writes the chosen BibTeX back to the DB (`update_iteration_data`)
 - Uses **exponential backoff** (starting at 30s) on errors to reduce throttling
-
----
-
-> [!NOTE]  
-> Books and theses are ignored for venue extraction (BibTeX entry types: `book`, `phdthesis`, `mastersthesis`).  
->
-> If a non-arXiv venue isn’t found, the script keeps retrying until it does (by design). You may wish to relax this if your corpus legitimately contains arXiv-only entries.
-
----
-
-### Requirements
-
-- Python 3.8+
-- Packages: `scholarly`, `python-dotenv`, `bibtexparser`
-- Local modules:  
-  - `utils.proxy_generator.get_proxy`  
-  - `utils.db_management` (`DBManager`, `ArticleData`, `get_article_data`, `initialize_db`)
-- Config: `search_conf.json` created in Step 1 (must include `proxy_key` and `db_path`)
-- (Optional) `.env` if your proxy key is stored as an env var
 
 ---
 
@@ -347,58 +253,14 @@ python 2_get_bibtex.py --iteration 1 --db_path ./data/database.db
 
 ---
 
-### Pipeline context
-
-1. **Step 1:** Create `search_conf.json` with `generate_search_conf.py`  
-2. **Step 2:** Seed iteration 0 with `0_generate_snowball_start.py`  
-3. **Step 3:** Expand citations for iteration *N* with `1_start_iteration.py`  
-4. **Step 4 (this script):** `2_get_bibtex.py` — attach BibTeX metadata to papers in iteration *N*
-
----
-
-### Implementation footnote (for maintainers)
-
-- `get_bibtex_venue(bibtex: str)` is intended to parse the **passed BibTeX string** with `bibtexparser.loads(bibtex)` and read `booktitle` / `journal`. If you see a reference to `article.bibtex` inside that function, adjust it to use the `bibtex` argument.
-
----
-
-## Step 4 — Assign Venue Ranks (interactive)
+## Step 3 — Assign Venue Ranks (interactive)
 
 `3_generate_conf_rank.py` scans the **iteration N** articles’ BibTeX, extracts their venues (conference/journal), and lets you **assign a rank** to any venue that isn’t already in your DB. Results are written to the `conf_rank` table as you go.
 
-### What it does
-- Loads config from `search_conf.json` (DB path)
-- Reads all articles for the target iteration from the DB
-- Parses each article’s BibTeX and extracts:
-  - `booktitle` (conference proceedings), or
-  - `journal` (journal venue)
-- Skips BibTeX entries of type `book`, `phdthesis`, `mastersthesis`
-- Checks which venues are **not yet ranked** in the DB:
-  - If venue contains arXiv/SSRN, auto-assigns rank `NA`
-  - Otherwise, prompts you to select a rank and saves it
+To assist this manual process, the tool searches both Scimago and a local core ranking database foe the venues.
 
-> [!TIP] 
+> [!NOTE] 
 > Run Step 4 (`2_get_bibtex.py`) first so venues can be read from BibTeX.
-
----
-
-### Allowed ranks
-
-Choose one of:
-
-```css
-A*, A, B, C, D, Q1, Q2, Q3, Q4, NA
-```
-
----
-
-### Requirements
-
-- Python 3.8+
-- Packages: `bibtexparser`
-- Local modules:
-  - `utils.db_management` (`ArticleData`, `initialize_db`)
-- Config: `search_conf.json` with `db_path`
 
 ---
 
@@ -458,17 +320,7 @@ Each answer is **immediately stored**:
 
 ---
 
-### Pipeline context
-
-1. **Step 1:** Create `search_conf.json`
-2. **Step 2:** Seed iteration 0 (`0_generate_snowball_start.py`)
-3. **Step 3:** Expand citations (`1_start_iteration.py`)
-4. **Step 4:** Fetch BibTeX (`2_get_bibtex.py`)
-5. **Step 5 (this script):** `3_generate_conf_rank.py` — interactively rank venues for iteration *N*
-
----
-
-## Step 5 — Filter by Metadata & Select
+## Step 4 — Filter by Metadata 
 
 `4_filter_by_metadata.py` reviews **iteration N** records and decides whether each paper is **selected** or **filtered out** based on venue/peer-review, year window, language, and download availability. It writes the results back to the DB in a single batch.
 
@@ -506,16 +358,6 @@ For each article, one of the following fields is updated (via `update_batch_iter
 | Not English               | `language_filtered_out = True`           |
 | No downloadable copy      | `download_filtered_out = True`           |
 | All checks passed         | `selected = SelectionStage.SELECTED`     |
-
----
-
-### Requirements
-
-- Python 3.8+
-- Packages: `bibtexparser`
-- Local modules: `utils.db_management` (`DBManager`, `initialize_db`, `SelectionStage`)
-- Config: `search_conf.json` with `start_year`, `end_year`, `venue_rank_list`, `db_path`
-- **Before running:** make sure you’ve populated **BibTeX** (Step 4) and **venue ranks** (Step 5)
 
 ---
 
@@ -559,17 +401,117 @@ Selected
 >**Unknown year:** You’re prompted to confirm it’s within the configured window
 >
 >**Interactive prompts:** The script is designed to be conservative—if metadata is incomplete, it asks you rather than guessing
+--- 
+
+## Step 5 — Title Screening
+
+`5_filter_by_title.py` iteratively asks the user  if he wants to keep each paper or not, based solely on the title. Along with the user's choice (yes, no, or skip), ProfOlaf also prompts the user for its reasoning in their choice. This is used to help each rater remember their thought process in the following steps
+### Usage
+
+**Filter iteration 1:**
+```bash
+python 5_filter_by_title.py --iteration 1
+```
+Custom DB path:
+```bash
+python 5_filter_by_title.py  --iteration 1 --db_path ./data/database.db
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration (int)
+- `--db_path` *(optional)* SQLite DB path (default: from `search_conf.json`)
 
 ---
 
-### Pipeline context
+## Step 6 — Solve Title Screening Disagreements
 
-1. **Step 1:** `generate_search_conf.py`
-2. **Step 2:** `0_generate_snowball_start.py`
-3. **Step 3:** `1_start_iteration.py`
-4. **Step 4:** `2_get_bibtex.py`
-5. **Step 5:** `3_generate_conf_rank.py`
-6. **Step 6 (this script):** `4_filter_by_metadata.py` — finalize selections for iteration *N* based on metadata checks
+`6_8_solve_disagreements.py` is used to collect the search databases of different users/raters and reach a consensus on the articles where there was a decision conflict. The script goes over the articles where at least 2 users disagreed in their screening process and presents the reasoning of each rater. After a careful discussion, the raters can make their final decision on the relevance of the paper.
+
+This script is used twice: after **Step 5** and **Step 7**.
+
+### Usage
+
+**Filter iteration 1:**
+```bash
+python 6_8_solve_disagreements.py --iteration 1 --search_dbs rater1.db rater2.db ... --selection_stage TITLE
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration (int)
+- `--search_dbs` *(required)* SQLite DB paths (one for each rater involved)
+- `--selection_stage` *(required: TITLE or CONTENT)* String representing which disagreements are being processed 
+---
+
+## Step 7 — Full Content Screening
+
+`7_filter_by_content.py` iteratively asks the user if he wants to keep each paper or not, based on the content of the full paper. For each article, the tool presents the url for the article. Along with the user's choice (yes, no, or skip), ProfOlaf also prompts the user for its reasoning in their choice. This is used to help each rater remember their thought process in the following steps
+### Usage
+
+**Filter iteration 1:**
+```bash
+python 5_filter_by_title.py --iteration 1
+```
+Custom DB path:
+```bash
+python 5_filter_by_title.py  --iteration 1 --db_path ./data/database.db
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration (int)
+- `--db_path` *(optional)* SQLite DB path (default: from `search_conf.json`)
+
+---
+
+## Step 8 — Solve Content Screening Disagreements
+
+`6_8_solve_disagreements.py` is used again, similarly to the previous steps
+
+```
+### Usage
+
+```bash
+python 6_8_solve_disagreements.py --iteration 1 --search_dbs rater1.db rater2.db ... --selection_stage CONTENT
+```
+
+### Arguments
+- `--iteration` *(required)* Target iteration (int)
+- `--search_dbs` *(required)* SQLite DB paths (one for each rater involved)
+- `--selection_stage` *(required: TITLE or CONTENT)* String representing which disagreements are being processed 
+---
+
+## Step 9 — Remove Duplicates
+
+`9_remove_duplicates.py` is used to remove potential duplicates in the results. The same article is often present in a certain database under a slightly different title. This script catches possible duplicate articles in the database and prompts the user which one he wants to keep (or if it is a false positive and both should be kept).
+
+
+### Usage
+
+```bash
+python 9_remove_duplicates.py --iterations 1 2 3 4
+```
+
+### Arguments
+- `--iterations` *(required)* Iterations to include
+- `--db_path` *(optional)* Final SQLite DB path
+- `--auto-remove` *(optional)* Automatically removes duplicates without user confirmation 
+---
+
+## Step 10 — Generate CSV
+
+`10_generate_csv.py` takes the information on the final search database and exports it into a csv
+
+### Usage
+
+```bash
+python 10_generate_csv.py --iterations 1 2 3 4 
+```
+
+### Arguments
+- `--iterations` *(required)* Iterations to include
+- `--db_path` *(optional)* Final SQLite DB path
+- `--output_path` *(optional)* Automatically removes duplicates without user confirmation 
+---
+
 
 
 
