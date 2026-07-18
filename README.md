@@ -4,30 +4,31 @@
 
 **ProfOlaf** was built to help researchers with literature reviews. It automates the process of snowballing articles through an initial seed, and helps raters through the process of screening. It also provides several LLM-assisted tools for article analysis.
 
-**ProfOlaf** is described in our [paper](https://arxiv.org/pdf/2510.26750).
+**ProfOlaf** is described in our [FSE'26 paper](https://arxiv.org/pdf/2510.26750).
 
 If you use our tool, please cite it:
 ```
-@article{afonso2025profolaf,
-  title={ProfOlaf: Semi-Automated Tool for Systematic Literature Reviews},
-  author={Afonso, Martim and Saavedra, Nuno and Louren{\c{c}}o, Bruno and Mendes, Alexandra and Ferreira, Jo{\~a}o},
-  journal={arXiv preprint arXiv:2510.26750},
-  year={2025}
+@inproceedings{afonso2025profolaf,
+author = {Afonso, Martim and Saavedra, Nuno and Louren\c{c}o, Bruno and Mendes, Alexandra and Ferreira, Jo\~{a}o F.},
+title = {{ProfOlaf}: Semi-Automated Tool for Systematic Literature Reviews},
+year = {2026},
+isbn = {9798400726361},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3803437.3806432},
+doi = {10.1145/3803437.3806432},
+booktitle = {Proceedings of the 34th ACM International Conference on the Foundations of Software Engineering},
+pages = {262–266},
+numpages = {5},
+keywords = {systematic literature reviews, automation, LLM},
+location = {Concordia University, Montreal, QC, Canada},
+series = {FSE Companion '26}
 }
 ```
 
-## Replication Package
-
-Our replication package with all our experiments is available in [zenodo](https://zenodo.org/records/18399259). Please do not forget to git pull to use the latest version of the tool.
-
----
-
-This document provides a walkthrough of ProfOlaf, demonstrating how the tool supports automated and semi-automated snowballing for literature reviews. The tool is available both as a **web application** and as a **command-line interface**. Here we describe the typical usage of the command-line version, which exposes the full pipeline.
-
-
 ## Prerequisites and Input
 
-Currently, ProfOlaf can only be ran with Python3.10. Other versions might cause dependency conflicts. Please create a virtual environment with Python3.10 to run the tool.
+Currently, ProfOlaf can only be ran with Python 3.10. Other versions might cause dependency conflicts. Please create a virtual environment with Python 3.10 to run the tool.
 
 Before running ProfOlaf, the user must prepare:
 
@@ -318,3 +319,11 @@ docker run -p 5000:5000 profolaf
 ```
 
 On startup, choose between the web application (port 5000) or an interactive shell for running CLI scripts.
+
+## Replication Package
+
+Our replication package with all our experiments is available in [zenodo](https://zenodo.org/records/18399259). Please do not forget to git pull to use the latest version of the tool.
+
+---
+
+This document provides a walkthrough of ProfOlaf, demonstrating how the tool supports automated and semi-automated snowballing for literature reviews. The tool is available both as a **web application** and as a **command-line interface**. Here we describe the typical usage of the command-line version, which exposes the full pipeline.
