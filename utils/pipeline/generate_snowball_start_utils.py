@@ -45,7 +45,11 @@ def generate_snowball_start(
     initial_pubs = []
     seen_titles = []
     for i, title in tqdm(enumerate(titles, 1), total=len(titles), desc=f"Searching with {search_method.value}"):      
-        article_data = article_search.search(title)
+        try:
+            article_data = article_search.search(title)
+        except Exception as e:
+            print(f"Error searching for '{title}': {e}")
+            article_data = None
         if article_data:
             article_data.set_iteration(iteration)
             article_data.set_selected(SelectionStage.CONTENT_APPROVED)

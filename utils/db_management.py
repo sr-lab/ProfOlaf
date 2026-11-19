@@ -95,6 +95,7 @@ class DBManager:
     def __init__(self, db_path: str, new_db: bool = False):
         if not new_db and not os.path.exists(db_path):
             raise ValueError(f"Database file does not exist: {db_path}")
+        self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.cursor = self.conn.cursor()
 
@@ -117,16 +118,28 @@ class DBManager:
         """ Check the most recent iteration in the database """
         table_name = "iterations"
         try:
-            self.cursor.execute(f"SELECT MAX(iteration) FROM {table_name}")
+            # iteration is stored as TEXT, so MAX() would compare lexicographically
+            # (e.g. MAX('2','10') == '2'). Cast to INTEGER to get the true numeric max.
+            self.cursor.execute(f"SELECT MAX(CAST(iteration AS INTEGER)) FROM {table_name}")
             current_iteration = self.cursor.fetchone()[0]
-            self.cursor.execute(f"SELECT MAX(selected) FROM {table_name} WHERE iteration = ?", (current_iteration,))
+            if current_iteration is None:
+                return None
+            self.cursor.execute(
+                f"SELECT MAX(selected) FROM {table_name} WHERE CAST(iteration AS INTEGER) = ?",
+                (current_iteration,),
+            )
             max_selected = self.cursor.fetchone()[0]
-            self.cursor.execute(f"SELECT search_method FROM {table_name} WHERE iteration = ? LIMIT 1", (current_iteration,))
-            search_method = self.cursor.fetchone()[0]
+            self.cursor.execute(
+                f"SELECT search_method FROM {table_name} WHERE CAST(iteration AS INTEGER) = ? LIMIT 1",
+                (current_iteration,),
+            )
+            row = self.cursor.fetchone()
+            search_method = row[0] if row else None
             return current_iteration, max_selected, search_method
         except Exception as e:
             print(f"Error checking current iteration: {e}")
             self.conn.rollback()
+            return None
 
     def create_iterations_table(self, annotations: List[str] = None):
         # create a table for the iteration if it doesn't exist
@@ -186,7 +199,9 @@ class DBManager:
             return
         try:
             
-            data_dicts = [data_element.__dict__ for data_element in data]
+            # Copy each object's dict so the type conversions below (enum -> value,
+            # None -> "", int -> str) do not mutate the caller's ArticleData objects.
+            data_dicts = [dict(data_element.__dict__) for data_element in data]
             for i, data_dict in enumerate(data_dicts):
                 for key, value in data_dict.items():
                     if hasattr(value, 'value'):  # Handle enum values
@@ -233,7 +248,8 @@ class DBManager:
         """
         table_name = "iterations"
         try:
-            self.conn.row_factory = sqlite3.Row
+            # Rows are mapped positionally against fields(ArticleData) below, so no
+            # row_factory is needed here.
             if kwargs:
                 conditions = []
                 values = []
@@ -298,36 +314,35 @@ class DBManager:
             print("Error getting iteration data: ", e)
             self.conn.rollback()
             raise ValueError(f"Failed to get iteration data: {e}")
-        finally:
-            self.conn.row_factory = None
     
     def update_iteration_data(self, iteration: int, article_id: str = "", **kwargs):
         table_name = "iterations"
         try:
-            assignments = ', '.join([f"{key} = ?" for key in kwargs.keys()])
-            if article_id != "":
-                sql_query = f"UPDATE {table_name} SET {assignments} WHERE id = ? and iteration = ?"
-                values = [kwargs[key] for key in kwargs] + [article_id, iteration]
-            else:
-                sql_query = f"UPDATE {table_name} SET {assignments} WHERE iteration = ?"
-                values = [kwargs[key] for key in kwargs] + [iteration]
+            # Normalize values for SQLite storage first, then build the query once.
+            #   enum   -> underlying value
+            #   list/dict -> JSON string
+            #   None   -> ""
+            #   bool   -> 1/0 (so keep_title/keep_content round-trip correctly)
+            #   int    -> str (all integer columns are stored as TEXT)
             for key, value in kwargs.items():
-                if hasattr(value, 'value'):  # Handle enum values
+                if hasattr(value, 'value'):
                     kwargs[key] = value.value
                 elif isinstance(value, (list, dict)):
                     kwargs[key] = json.dumps(value)
                 elif value is None:
                     kwargs[key] = ""
                 elif isinstance(value, bool):
-                    # Store booleans as 1/0 so keep_title, keep_content etc. round-trip correctly
                     kwargs[key] = 1 if value else 0
                 elif isinstance(value, int):
-                    # Convert integers to strings for SQLite (all integer fields are stored as TEXT)
-                    if key in ['id', 'pub_year', 'num_citations', 'selected', 'iteration']:
-                        kwargs[key] = str(value)
-                    else:
-                        kwargs[key] = str(value)  # Convert all ints to strings for consistency
-            values = [kwargs[key] for key in kwargs] + [article_id, iteration] if article_id != "" else [kwargs[key] for key in kwargs] + [iteration]
+                    kwargs[key] = str(value)
+
+            assignments = ', '.join([f"{key} = ?" for key in kwargs])
+            if article_id != "":
+                sql_query = f"UPDATE {table_name} SET {assignments} WHERE id = ? and iteration = ?"
+                values = list(kwargs.values()) + [article_id, iteration]
+            else:
+                sql_query = f"UPDATE {table_name} SET {assignments} WHERE iteration = ?"
+                values = list(kwargs.values()) + [iteration]
             self.cursor.execute(sql_query, values)
             self.conn.commit()
         except Exception as e:
@@ -1225,6 +1240,102 @@ PRIMARY KEY(id, rater))"
 
     # -------------------------- Workflow Metadata Table Methods --------------------------
 
+    def create_snowball_edges_table(self):
+        """Create table to store snowballing provenance edges.
+
+        Each row records that ``child_id`` was discovered while snowballing
+        ``parent_id``, either as a citation (forward snowballing) or a
+        reference (backward snowballing), during a given iteration. This is
+        the edge list of the citation/reference graph.
+        """
+        table_name = "snowball_edges"
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS snowball_edges (
+                    parent_id TEXT,
+                    child_id TEXT,
+                    direction TEXT,
+                    iteration INTEGER,
+                    PRIMARY KEY (parent_id, child_id, direction)
+                )
+                """
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Failed to create snowball edges table: {e}")
+
+    def insert_snowball_edges(self, edges: List[Tuple]):
+        """Insert snowballing edges.
+
+        ``edges`` is a list of ``(parent_id, child_id, direction, iteration)``
+        tuples. ``direction`` is ``'citation'`` or ``'reference'``. Duplicate
+        edges are ignored so the method is safe to call repeatedly.
+        """
+        if not edges:
+            return
+        # Ensure the table exists (safe for databases created before this feature).
+        self.create_snowball_edges_table()
+        try:
+            self.cursor.executemany(
+                """
+                INSERT OR IGNORE INTO snowball_edges
+                    (parent_id, child_id, direction, iteration)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (str(parent_id), str(child_id), str(direction), int(iteration))
+                    for parent_id, child_id, direction, iteration in edges
+                ],
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Could not add snowball edges: {e}")
+
+    def get_snowball_edges(self, **kwargs):
+        """Return snowballing edges as a list of dicts.
+
+        Optional filters: ``iteration=<int>`` and/or ``direction=<str>``.
+        Returns an empty list if the table does not exist yet.
+        """
+        table_name = "snowball_edges"
+        try:
+            tables_found = self.cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='snowball_edges';"
+            ).fetchall()
+            if not tables_found:
+                return []
+
+            conditions = []
+            values = []
+            if "iteration" in kwargs and kwargs["iteration"] is not None:
+                conditions.append("iteration = ?")
+                values.append(int(kwargs["iteration"]))
+            if "direction" in kwargs and kwargs["direction"] is not None:
+                conditions.append("direction = ?")
+                values.append(str(kwargs["direction"]))
+
+            query = "SELECT parent_id, child_id, direction, iteration FROM snowball_edges"
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            self.cursor.execute(query, values)
+            rows = self.cursor.fetchall()
+            return [
+                {
+                    "parent_id": row[0],
+                    "child_id": row[1],
+                    "direction": row[2],
+                    "iteration": row[3],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print("Error getting snowball edges: ", e)
+            return []
+
     def create_workflow_metadata_table(self):
         """Create table to store workflow metadata (current iteration, last step, etc.)"""
         table_name = "workflow_metadata"
@@ -1393,6 +1504,7 @@ def initialize_db(db_path: str, search_conf: dict):
     db_manager.create_workflow_metadata_table()
     db_manager.create_screening_table(annotations)
     db_manager.create_annotations_table(annotations)
+    db_manager.create_snowball_edges_table()
     return db_manager
 
 def get_iteration_setup(db_path: str, **kwargs):

@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ---------------------------------------------------------------------------
+# Testing / coverage
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---------------------------------------------------------------------------
+# Editor / tooling
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.specstory/
+.cursorindexingignore
+*.swp
+*~
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# ProfOlaf data & generated artifacts (large / machine-local / regenerable)
+# ---------------------------------------------------------------------------
+# Literature-review databases (large binaries; keep databases/README.md tracked)
+databases/*.db
+databases/*.db-journal
+databases/*.sqlite
+databases/*.sqlite3
+
+# Generated graph / visualization output
+graphs/
+static/graphs/
+
+# Runtime uploads
+uploads/
+
+# Backups / scratch
+*.bak
+
+# LLM credentials (never commit API keys)
+utils/article_llm_analysis/llm_config.json
+.env

@@ -1,7 +1,7 @@
 {
-  "db_path": "databases/test.db",
-  "current_iteration": 1,
-  "last_step": "Step 4: Assign Venue Ranks",
+  "db_path": "/home/mementos/PhD/ProfOlaf/databases/merged_content_screening.db",
+  "current_iteration": 2,
+  "last_step": "Step 10: Generate CSV",
   "skipped_steps": [
     "Step 2: Get BibTeX",
     "Step 4: Filter by Metadata",

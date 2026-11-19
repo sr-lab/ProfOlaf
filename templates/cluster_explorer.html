@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster Explorer - ProfOlaf</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        html, body { height: 100%; }
+        body { display: flex; flex-direction: column; overflow: hidden; }
+        #topbar { flex: 0 0 auto; }
+        #explorer { flex: 1 1 auto; display: flex; min-height: 0; }
+        #sidebar {
+            flex: 0 0 260px; overflow-y: auto; border-right: 1px solid #dee2e6;
+            background: #f8f9fa;
+        }
+        #graphWrap { flex: 1 1 auto; position: relative; min-width: 0; }
+        #graph { width: 100%; height: 100%; background: #ffffff; }
+        #panel {
+            flex: 0 0 340px; overflow-y: auto; border-left: 1px solid #dee2e6;
+            background: #ffffff; padding: 16px;
+        }
+        .cluster-item { cursor: pointer; border: none; border-bottom: 1px solid #eee; }
+        .cluster-item.active { background: #e7f1ff; border-left: 4px solid #0d6efd; }
+        .cluster-item .code { font-weight: 600; }
+        .cluster-item .meta { font-size: 0.78rem; color: #6c757d; }
+        #legend {
+            position: absolute; top: 10px; left: 10px; z-index: 5;
+            background: rgba(255,255,255,0.95); border: 1px solid #ccc; border-radius: 8px;
+            padding: 8px 12px; font-size: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+            max-height: 60%; overflow-y: auto;
+        }
+        #legend .row-i { display: flex; align-items: center; margin: 2px 0; }
+        #legend .swatch { width: 13px; height: 13px; border-radius: 50%; display: inline-block; margin-right: 7px; }
+        #legend .line { width: 14px; height: 3px; display: inline-block; margin-right: 7px; }
+        .panel-title { font-size: 1.02rem; font-weight: 600; line-height: 1.3; }
+        .field-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; color: #888; margin-top: 10px; }
+        .field-value { font-size: 0.92rem; word-break: break-word; }
+        .empty-hint { color: #9aa0a6; text-align: center; margin-top: 40px; }
+        @media (max-width: 900px) {
+            body { overflow: auto; }
+            #explorer { flex-direction: column; }
+            #sidebar, #panel { flex-basis: auto; width: 100%; max-height: 240px; }
+            #graphWrap { height: 60vh; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Top bar -->
+    <div id="topbar" class="bg-dark text-white px-3 py-2 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-circle-nodes"></i> Cluster Explorer</h5>
+        <div class="d-flex align-items-center gap-2">
+            <span id="genInfo" class="small text-white-50">
+                {% if has_clusters %}Generated: {{ generated_at }}{% else %}No cluster graphs yet{% endif %}
+            </span>
+            <button id="regenBtn" class="btn btn-sm btn-outline-light" {% if is_running %}disabled{% endif %}>
+                <i class="fas fa-rotate"></i> {% if has_clusters %}Regenerate{% else %}Generate{% endif %}
+            </button>
+            <a href="{{ url_for('index') }}" class="btn btn-sm btn-light"><i class="fas fa-home"></i></a>
+        </div>
+    </div>
+
+    <!-- Generation progress (hidden unless running) -->
+    <div id="genBar" class="bg-light border-bottom px-3 py-2" style="display:{% if is_running %}block{% else %}none{% endif %};">
+        <div class="d-flex align-items-center gap-2">
+            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+            <span id="genStep" class="small">Working...</span>
+            <button id="genCancel" class="btn btn-sm btn-outline-danger ms-auto">Cancel</button>
+        </div>
+        <div id="genLog" class="small text-muted mt-1" style="font-family:monospace; max-height:80px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- Explorer body -->
+    <div id="explorer">
+        <div id="sidebar">
+            <div id="searchBox" class="p-2 border-bottom bg-white" style="position:sticky; top:0; z-index:5;">
+                <div class="position-relative">
+                    <input id="paperSearch" type="text" class="form-control form-control-sm"
+                           placeholder="Search papers by title or author…" autocomplete="off">
+                    <div id="searchResults" class="list-group shadow-sm"
+                         style="display:none; position:absolute; left:0; right:0; z-index:20; max-height:340px; overflow-y:auto;"></div>
+                </div>
+            </div>
+            <div class="list-group list-group-flush" id="clusterList">
+                <div class="p-3 text-muted small">Loading clusters…</div>
+            </div>
+        </div>
+
+        <div id="graphWrap">
+            <div id="legend" style="display:none;"></div>
+            <div id="graph"></div>
+            <div id="graphEmpty" class="empty-hint" style="display:none;">
+                <i class="fas fa-circle-nodes fa-2x mb-2"></i><br>
+                Select a cluster to view its graph.
+            </div>
+        </div>
+
+        <div id="panel">
+            <div id="panelEmpty" class="empty-hint">
+                <i class="fas fa-hand-pointer fa-2x mb-2"></i><br>
+                Click a node to see paper details.
+            </div>
+            <div id="panelContent" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <script>
+        const SELECTION_STAGE = {
+            '-1': 'Duplicate', '0': 'Not selected', '1': 'Metadata approved',
+            '2': 'Title approved', '3': 'Content approved (accepted)'
+        };
+        const EXTERNAL_COLOR = '#ff1493';   // ring: node links to other clusters (high-contrast magenta)
+        const ISOLATED_COLOR = '#9aa0a6';   // ring: no links at all
+        const EDGE_NEUTRAL = '#d0d3d7';     // default edge colour
+        const EDGE_DIM = '#edeff1';         // edge not touching the selected node
+        const EDGE_REF = '#762a83';         // selected -> X : X is a reference (purple)
+        const EDGE_CIT = '#1b7837';         // X -> selected : X is a citation (green)
+
+        let network = null;
+        let edgesDS = null;
+        let nodesById = {};
+        let activeCode = null;
+        let pendingFocusId = null;   // node to focus once its cluster graph loads
+        let searchTimer = null;
+
+        // Colour edges relative to the clicked node: outgoing = reference, incoming
+        // = citation. This matches the side panel (and avoids the ambiguity of a
+        // single global citation/reference label).
+        function colorEdgesFor(nid) {
+            if (!edgesDS) return;
+            const updates = edgesDS.get().map(e => {
+                if (!nid) return { id: e.id, color: { color: EDGE_NEUTRAL }, width: 1 };
+                if (e.from === nid) return { id: e.id, color: { color: EDGE_REF }, width: 2.5 };
+                if (e.to === nid) return { id: e.id, color: { color: EDGE_CIT }, width: 2.5 };
+                return { id: e.id, color: { color: EDGE_DIM }, width: 1 };
+            });
+            edgesDS.update(updates);
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = (s === null || s === undefined) ? '' : String(s);
+            return d.innerHTML;
+        }
+
+        // ---- Cluster navigator ----
+        function loadClusterList() {
+            fetch('/api/clusters').then(r => r.json()).then(data => {
+                const list = document.getElementById('clusterList');
+                document.getElementById('genInfo').textContent =
+                    data.generated_at ? ('Generated: ' + data.generated_at) : 'No cluster graphs yet';
+                if (!data.clusters || data.clusters.length === 0) {
+                    list.innerHTML = '<div class="p-3 text-muted small">No clusters generated yet. '
+                        + 'Click <b>Generate</b> above.</div>';
+                    document.getElementById('graphEmpty').style.display = 'block';
+                    return;
+                }
+                list.innerHTML = '';
+                data.clusters.forEach(c => {
+                    const item = document.createElement('a');
+                    item.className = 'list-group-item cluster-item';
+                    item.dataset.code = c.code;
+                    const miss = c.missing_papers ? ` · ${c.missing_papers} missing` : '';
+                    item.innerHTML = `<div class="code">${esc(c.code)}</div>`
+                        + `<div class="small">${esc(stripCode(c.label))}</div>`
+                        + `<div class="meta">${c.nodes} papers · ${c.edges} links${miss}</div>`;
+                    item.addEventListener('click', () => selectCluster(c.code, item));
+                    list.appendChild(item);
+                });
+            });
+        }
+
+        function stripCode(label) {
+            // "T01 — Proof generation..." -> "Proof generation..."
+            const m = (label || '').split(/\s[—-]\s/);
+            return m.length > 1 ? m.slice(1).join(' — ') : label;
+        }
+
+        function selectCluster(code, item) {
+            if (activeCode === code) return;
+            activeCode = code;
+            document.querySelectorAll('.cluster-item').forEach(el => el.classList.remove('active'));
+            if (item) item.classList.add('active');
+            clearPanel();
+            document.getElementById('graphEmpty').style.display = 'none';
+            fetch('/api/clusters/' + encodeURIComponent(code))
+                .then(r => r.json())
+                .then(renderGraph);
+        }
+
+        // ---- Graph rendering ----
+        function renderGraph(data) {
+            if (data.error) { alert(data.error); return; }
+            nodesById = {};
+            const visNodes = data.nodes.map(n => {
+                nodesById[n.id] = n;
+                const ext = parseInt(n.external_links) || 0;
+                const isolated = n.isolation_cause === 'disconnected';
+                // A blue ring flags nodes that connect to other clusters (takes
+                // precedence); grey flags nodes with no links at all.
+                let border = '#555';
+                if (ext > 0) border = EXTERNAL_COLOR;
+                else if (isolated) border = ISOLATED_COLOR;
+                const node = {
+                    id: n.id,
+                    label: ' ',
+                    value: Math.max(1, parseInt(n.num_citations) || 0),
+                    color: { background: n.color || '#888', border: border },
+                    borderWidth: ext > 0 ? 5 : (isolated ? 3 : 1),
+                };
+                if (ext > 0) {
+                    // A magenta glow makes bridging nodes pop out of the cluster.
+                    node.shadow = { enabled: true, color: 'rgba(255,20,147,0.55)', size: 16, x: 0, y: 0 };
+                }
+                return node;
+            });
+            // Edges are neutral by default; direction is shown by the arrow
+            // (A -> B means A cites B). Citation/reference colouring is applied
+            // relative to the node you click (see colorEdgesFor).
+            const visEdges = data.edges.map((e, i) => ({
+                id: 'e' + i, from: e.source, to: e.target,
+                color: { color: EDGE_NEUTRAL }, arrows: 'to', width: 1,
+            }));
+
+            const container = document.getElementById('graph');
+            edgesDS = new vis.DataSet(visEdges);
+            const dataset = { nodes: new vis.DataSet(visNodes), edges: edgesDS };
+            const options = {
+                nodes: { shape: 'dot', scaling: { min: 6, max: 34 }, font: { size: 0 } },
+                edges: { smooth: false, width: 1, arrows: { to: { scaleFactor: 0.45 } } },
+                interaction: { hover: true, tooltipDelay: 999999, navigationButtons: false },
+                physics: {
+                    enabled: true,
+                    stabilization: { iterations: 160 },
+                    barnesHut: { springLength: 110, gravitationalConstant: -6000 },
+                },
+            };
+            if (network) network.destroy();
+            network = new vis.Network(container, dataset, options);
+            // Freeze physics once laid out so dragging is snappy.
+            network.once('stabilizationIterationsDone', () => {
+                network.setOptions({ physics: false });
+                if (pendingFocusId && nodesById[pendingFocusId]) {
+                    const fid = pendingFocusId; pendingFocusId = null;
+                    focusNode(fid);
+                }
+            });
+            network.on('click', params => {
+                if (params.nodes && params.nodes.length) {
+                    const nid = params.nodes[0];
+                    colorEdgesFor(nid);
+                    showPanel(nodesById[nid]);
+                } else {
+                    colorEdgesFor(null);
+                }
+            });
+            buildLegend(data.nodes);
+        }
+
+        // ---- Highlight/focus a specific node (used by search) ----
+        function focusNode(id) {
+            if (!network || !nodesById[id]) return;
+            try {
+                network.selectNodes([id]);
+                network.focus(id, { scale: 1.3, animation: { duration: 500 } });
+            } catch (e) { /* node not laid out yet */ }
+            colorEdgesFor(id);
+            showPanel(nodesById[id]);
+        }
+
+        // Jump to a paper from a search result: pick a cluster it belongs to
+        // (prefer the one already open), load it, then focus the node.
+        function goToPaper(id, codes) {
+            if (!codes || !codes.length) return;
+            const code = (codes.indexOf(activeCode) >= 0) ? activeCode : codes[0];
+            if (code === activeCode && nodesById[id]) { focusNode(id); return; }
+            pendingFocusId = id;
+            const item = document.querySelector('.cluster-item[data-code="' + code + '"]');
+            selectCluster(code, item);
+        }
+
+        // ---- Paper search (title / author, fuzzy) ----
+        function hideSearchResults() {
+            const r = document.getElementById('searchResults');
+            r.style.display = 'none'; r.innerHTML = '';
+        }
+        function runSearch(q) {
+            fetch('/api/clusters/search?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(d => {
+                    const box = document.getElementById('searchResults');
+                    if (!d.results || !d.results.length) {
+                        box.innerHTML = '<div class="list-group-item small text-muted">No matches</div>';
+                        box.style.display = 'block'; return;
+                    }
+                    box.innerHTML = '';
+                    d.results.forEach(res => {
+                        const a = document.createElement('a');
+                        a.className = 'list-group-item list-group-item-action py-1';
+                        a.style.cursor = 'pointer';
+                        const badges = (res.codes || []).map(c =>
+                            `<span class="badge bg-secondary me-1" style="font-size:9px">${esc(c)}</span>`).join('');
+                        const meta = [res.authors, res.year].filter(Boolean).map(esc).join(' · ');
+                        a.innerHTML = `<div class="small fw-semibold">${esc(res.title)}</div>`
+                            + (meta ? `<div class="text-muted" style="font-size:11px">${meta}</div>` : '')
+                            + `<div class="mt-1">${badges}</div>`;
+                        a.addEventListener('click', () => {
+                            document.getElementById('paperSearch').value = res.title;
+                            hideSearchResults();
+                            goToPaper(res.id, res.codes);
+                        });
+                        box.appendChild(a);
+                    });
+                    box.style.display = 'block';
+                })
+                .catch(() => hideSearchResults());
+        }
+
+        function buildLegend(nodes) {
+            const iters = {};
+            nodes.forEach(n => { iters[n.iteration] = n.color; });
+            let html = '<div style="font-weight:600;margin-bottom:4px;">Iteration</div>';
+            Object.keys(iters).sort((a, b) => a - b).forEach(it => {
+                const lbl = (it === '0' || it === 0) ? '0 (seed)' : it;
+                html += `<div class="row-i"><span class="swatch" style="background:${esc(iters[it])}"></span>Iteration ${esc(lbl)}</div>`;
+            });
+            html += '<div style="font-weight:600;margin:6px 0 4px;">Edges (arrow = cites)</div>'
+                 + '<div class="small text-muted" style="margin-bottom:3px;">Click a node to colour its links:</div>'
+                 + `<div class="row-i"><span class="line" style="background:${EDGE_REF}"></span>its references (it cites &rarr;)</div>`
+                 + `<div class="row-i"><span class="line" style="background:${EDGE_CIT}"></span>its citations (&rarr; cite it)</div>`
+                 + '<div style="font-weight:600;margin:6px 0 4px;">Node ring</div>'
+                 + `<div class="row-i"><span class="swatch" style="background:#fff;border:3px solid ${EXTERNAL_COLOR}"></span>Links to other clusters</div>`
+                 + `<div class="row-i"><span class="swatch" style="background:#fff;border:3px solid ${ISOLATED_COLOR}"></span>No links at all</div>`;
+            const el = document.getElementById('legend');
+            el.innerHTML = html;
+            el.style.display = 'block';
+        }
+
+        // ---- Details panel ----
+        function clearPanel() {
+            document.getElementById('panelContent').style.display = 'none';
+            document.getElementById('panelEmpty').style.display = 'block';
+        }
+
+        function parseExternalDetail(detail) {
+            // "T01:2;T05:1;other:2" -> "T01 (2), T05 (1), other (2)"
+            if (!detail) return '';
+            return detail.split(';').filter(Boolean).map(part => {
+                const [code, cnt] = part.split(':');
+                return `${esc(code)} (${esc(cnt)})`;
+            }).join(', ');
+        }
+
+        function field(label, value, isHtml) {
+            if (value === null || value === undefined || value === '') return '';
+            return `<div class="field-label">${esc(label)}</div>`
+                 + `<div class="field-value">${isHtml ? value : esc(value)}</div>`;
+        }
+
+        function showPanel(n) {
+            if (!n) return;
+            const ssUrl = 'https://www.semanticscholar.org/paper/' + encodeURIComponent(n.id);
+            let html = `<div class="panel-title">${esc(n.title || n.label || '(untitled)')}</div>`;
+            html += field('Venue', n.venue);
+            html += field('Year', n.year);
+            html += field('Iteration', n.iteration);
+            html += field('Citations', n.num_citations);
+            html += field('Selection stage', SELECTION_STAGE[String(n.selected)] || n.selected);
+            html += field('Search method', n.search_method);
+            const ext = parseInt(n.external_links) || 0;
+            if (ext > 0) {
+                const breakdown = parseExternalDetail(n.external_detail);
+                html += field('Connections to other clusters',
+                    `<b>${ext}</b> paper${ext === 1 ? '' : 's'}`
+                    + (breakdown ? `<div class="small text-muted mt-1">${breakdown}</div>` : ''),
+                    true);
+            } else if (n.isolation_cause === 'disconnected') {
+                html += field('Note', 'Isolated — no citation/reference link to any other paper in the corpus.');
+            }
+            html += field('Semantic Scholar', `<a href="${ssUrl}" target="_blank" rel="noopener">Open paper <i class="fas fa-up-right-from-square fa-xs"></i></a>`, true);
+            html += `<div class="field-label">Paper ID</div><div class="field-value small text-muted">${esc(n.id)}</div>`;
+            html += '<hr><div id="linksArea">'
+                 + '<button id="loadLinksBtn" class="btn btn-sm btn-outline-primary w-100">'
+                 + '<i class="fas fa-list-ul"></i> Load references &amp; citations</button>'
+                 + '<div class="small text-muted mt-1">Resolves titles from Semantic Scholar (may take a few seconds the first time).</div>'
+                 + '</div>';
+            const pc = document.getElementById('panelContent');
+            pc.innerHTML = html;
+            pc.style.display = 'block';
+            document.getElementById('panelEmpty').style.display = 'none';
+            document.getElementById('loadLinksBtn').addEventListener('click', () => loadLinks(n.id));
+        }
+
+        // ---- References / citations (verification & repair) ----
+        function loadLinks(pid) {
+            const area = document.getElementById('linksArea');
+            area.innerHTML = '<div class="text-muted small"><div class="spinner-border spinner-border-sm"></div> Loading references & citations…</div>';
+            fetch('/api/paper/' + encodeURIComponent(pid) + '/links')
+                .then(r => r.json())
+                .then(d => renderLinks(d, area))
+                .catch(err => { area.innerHTML = '<div class="text-danger small">Error: ' + esc(err.message) + '</div>'; });
+        }
+
+        const SOURCE_STYLE = {
+            s2: { bg: '#e7f1ff', fg: '#0b5ed7', label: 'S2' },
+            openalex: { bg: '#e6f4ea', fg: '#1e7e34', label: 'OA' },
+            graph: { bg: '#f1e9fb', fg: '#6f42c1', label: 'graph' },
+        };
+
+        function linkRow(it) {
+            // corpus papers are emphasised; a corpus paper with no edge is flagged.
+            const tags = (it.clusters || []).map(c =>
+                `<span class="badge bg-light text-dark border me-1">${esc(c)}</span>`).join('');
+            const srcs = (it.sources || []).map(s => {
+                const st = SOURCE_STYLE[s] || { bg: '#eee', fg: '#555', label: s };
+                return `<span class="badge me-1" style="background:${st.bg};color:${st.fg};font-weight:500;" title="Found in: ${esc(s)}">${esc(st.label)}</span>`;
+            }).join('');
+            const meta = [it.year, it.venue].filter(Boolean).map(esc).join(' · ');
+            const ss = 'https://www.semanticscholar.org/paper/' + encodeURIComponent(it.id);
+            const titleTxt = it.title || '(title unresolved)';
+            const title = `<a href="${ss}" target="_blank" rel="noopener" class="${it.title ? '' : 'text-muted fst-italic'}">${esc(titleTxt)}</a>`;
+            let flag = '';
+            if (it.in_corpus && !it.linked) {
+                flag += ' <span class="badge bg-warning text-dark" title="In the corpus but no edge in the graph — possible missing link">missing edge</span>';
+            }
+            if (it.id_mismatch) {
+                flag += ' <span class="badge bg-info text-dark" title="Matched to a corpus paper by title; the provider id differs from the graph id">id&nbsp;mismatch</span>';
+            }
+            const dotColor = it.in_corpus ? '#198754' : '#c7ccd1';
+            return `<div class="d-flex py-1" style="border-bottom:1px solid #f0f0f0;">
+                <span style="flex:0 0 8px;margin-top:5px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};"></span></span>
+                <div class="ps-2" style="min-width:0;">
+                    <div class="small" style="line-height:1.25;">${title}${flag}</div>
+                    <div class="meta">${srcs}${tags}${meta ? `<span class="text-muted">${meta}</span>` : ''}</div>
+                </div></div>`;
+        }
+
+        function section(title, items, counts, kind) {
+            const inC = counts[kind + '_in_corpus'];
+            const tot = counts[kind + '_total'];
+            const trunc = counts[kind + '_truncated'];
+            const corpusItems = items.filter(i => i.in_corpus);
+            const extItems = items.filter(i => !i.in_corpus);
+            let body = '';
+            if (corpusItems.length) {
+                body += '<div class="field-label">In corpus (' + corpusItems.length + ')</div>'
+                      + corpusItems.map(linkRow).join('');
+            }
+            if (extItems.length) {
+                body += '<div class="field-label">External (' + extItems.length + ')</div>'
+                      + extItems.map(linkRow).join('');
+            }
+            if (!items.length) body = '<div class="text-muted small">None.</div>';
+            if (trunc) body += '<div class="text-muted small mt-1">External list truncated.</div>';
+            return `<div class="mb-2"><div class="panel-title">${esc(title)} `
+                 + `<span class="text-muted small">(${tot} total · ${inC} in corpus)</span></div>`
+                 + `<div style="max-height:260px;overflow-y:auto;">${body}</div></div>`;
+        }
+
+        function renderLinks(d, area) {
+            if (d.error) { area.innerHTML = '<div class="text-danger small">' + esc(d.error) + '</div>'; return; }
+            if (!d.found) { area.innerHTML = '<div class="text-muted small">' + esc(d.reason || 'No data.') + '</div>'; return; }
+            area.innerHTML =
+                section('References', d.references, d.counts, 'references')
+                + section('Citations', d.citations, d.counts, 'citations')
+                + '<div class="small text-muted mt-1">'
+                + '<span style="color:#198754;">●</span> in corpus &nbsp; '
+                + '<span style="color:#c7ccd1;">●</span> external.<br>'
+                + 'Source: <span class="badge" style="background:#e7f1ff;color:#0b5ed7;">S2</span> Semantic Scholar, '
+                + '<span class="badge" style="background:#e6f4ea;color:#1e7e34;">OA</span> OpenAlex, '
+                + '<span class="badge" style="background:#f1e9fb;color:#6f42c1;">graph</span> an edge in the graph.<br>'
+                + '<b>missing edge</b> = corpus paper with no graph edge; '
+                + '<b>id mismatch</b> = matched to a corpus paper by title (provider id differs). Both are repair candidates.</div>';
+        }
+
+        // ---- Generation (regenerate button) ----
+        let genInterval = null;
+        function pollGen() {
+            fetch('/api/clusters/execute/status').then(r => r.json()).then(s => {
+                document.getElementById('genStep').textContent = s.current_step || 'Working...';
+                if (s.logs && s.logs.length) {
+                    const lg = document.getElementById('genLog');
+                    lg.innerHTML = s.logs.slice(-8).map(l => `<div>${esc(l)}</div>`).join('');
+                    lg.scrollTop = lg.scrollHeight;
+                }
+                if (!s.is_running) {
+                    clearInterval(genInterval);
+                    document.getElementById('genBar').style.display = 'none';
+                    document.getElementById('regenBtn').disabled = false;
+                    loadClusterList();
+                }
+            });
+        }
+
+        document.getElementById('regenBtn').addEventListener('click', () => {
+            if (!confirm('Regenerate all cluster graphs by slicing the current accepted citation graph?')) return;
+            document.getElementById('regenBtn').disabled = true;
+            document.getElementById('genBar').style.display = 'block';
+            document.getElementById('genLog').innerHTML = '';
+            fetch('/api/clusters/execute', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }).then(r => r.json()).then(d => {
+                if (d.error) {
+                    alert('Error: ' + d.error);
+                    document.getElementById('genBar').style.display = 'none';
+                    document.getElementById('regenBtn').disabled = false;
+                    return;
+                }
+                genInterval = setInterval(pollGen, 1200);
+                pollGen();
+            });
+        });
+
+        document.getElementById('genCancel').addEventListener('click', () => {
+            fetch('/api/clusters/execute/cancel', { method: 'POST' });
+        });
+
+        // ---- Search wiring ----
+        const searchInput = document.getElementById('paperSearch');
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            const q = searchInput.value.trim();
+            if (q.length < 2) { hideSearchResults(); return; }
+            searchTimer = setTimeout(() => runSearch(q), 220);
+        });
+        searchInput.addEventListener('keydown', e => { if (e.key === 'Escape') { hideSearchResults(); searchInput.blur(); } });
+        document.addEventListener('click', e => {
+            if (!document.getElementById('searchBox').contains(e.target)) hideSearchResults();
+        });
+
+        // ---- Init ----
+        loadClusterList();
+        {% if is_running %}
+        document.getElementById('genBar').style.display = 'block';
+        genInterval = setInterval(pollGen, 1200);
+        pollGen();
+        {% endif %}
+    </script>
+</body>
+</html>

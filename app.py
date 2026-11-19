@@ -5,6 +5,7 @@ ProfOlaf Web Application - Entry Point
 
 import os
 import json
+import glob
 import threading
 import shutil
 import sqlite3
@@ -12,18 +13,23 @@ from flask import Flask, render_template, request, jsonify, flash, redirect, url
 from pathlib import Path
 from collections import defaultdict
 from utils.db_management import DBManager, SelectionStage, initialize_db
-from utils.article_search.article_search_method import SearchMethod, ArticleSearch, SemanticScholarSearchMethod, GoogleScholarSearchMethod, DBLPSearchMethod
+from utils.article_search.article_search_method import (
+    SearchMethod, ArticleSearch, SemanticScholarSearchMethod, GoogleScholarSearchMethod, DBLPSearchMethod,
+    _get_semantic_scholar_api_key,
+)
 from werkzeug.utils import secure_filename
 
 # Import from pipeline modules
 from utils.pipeline.generate_snowball_start_utils import generate_snowball_start, extract_titles_from_file
-from utils.pipeline.start_iteration_utils import get_articles
+from utils.pipeline.start_iteration_utils import get_articles, snowball_direction_kwargs, SNOWBALL_DIRECTIONS
 from utils.pipeline.get_bibtex import process_articles_optimized, get_bibtex_single
 from utils.pipeline.generate_conf_rank_utils import get_venues, find_similar_venues, _get_scimago_rank, _get_core_rank
-from utils.pipeline.filter_by_metadata_utils import automated_check_venue_and_peer_reviewed
+from utils.pipeline.filter_by_metadata_utils import automated_check_venue_and_peer_reviewed, is_preprint_publication
 from utils.pipeline.screening import apply_decision
 from utils.pipeline.solve_disagreements import settle_agreements
 from utils.pipeline.llm_screening import screen_papers, download_pdfs, get_articles_from_db
+from utils.pipeline.citation_graph_utils import generate_citation_graph, EDGE_SOURCES, DEFAULT_FORMATS
+from utils.pipeline.cluster_graph_utils import generate_cluster_graphs, get_paper_links, MANIFEST_NAME
 from utils.article_processing.download_pdfs import is_valid_pdf
 
 # Global state for tracking running tasks
@@ -53,6 +59,24 @@ running_tasks = {
         'current_step': '',
         'logs': [],
         'cancel_flag': None
+    },
+    'generate_citation_graph': {
+        'is_running': False,
+        'progress': 0,
+        'total': 0,
+        'current_step': '',
+        'logs': [],
+        'cancel_flag': None,
+        'outputs': {}
+    },
+    'generate_cluster_graphs': {
+        'is_running': False,
+        'progress': 0,
+        'total': 0,
+        'current_step': '',
+        'logs': [],
+        'cancel_flag': None,
+        'outputs': {}
     }
 }
 
@@ -73,6 +97,9 @@ SEARCH_CONF_PATH = os.path.join(CONFS_DIR, "search_conf.json")
 WORKFLOW_STATE_PATH = os.path.join(CONFS_DIR, "workflow_state.json")
 ANALYSIS_CONF_PATH = os.path.join(CONFS_DIR, "analysis_conf.json")
 LLM_CONFIG_PATH = os.path.join("utils", "article_llm_analysis", "llm_config.json")
+GRAPHS_DIR = os.path.join("static", "graphs")
+# Per-cluster graphs are shared with the CLI (13_generate_cluster_graphs.py).
+CLUSTERS_DIR = os.path.join("graphs", "clusters")
 
 # Ensure directories exist
 os.makedirs(CONFS_DIR, exist_ok=True)
@@ -1067,8 +1094,10 @@ def generate_snowball_start_page():
     
     # Get defaults from config
     default_input_file = search_conf.get('initial_file', '') if search_conf else ''
-    default_delay = 1.0
     default_search_method = search_conf.get('search_method', 'google_scholar') if search_conf else 'google_scholar'
+    default_delay = search_conf.get('request_delay') if search_conf and search_conf.get('request_delay') is not None else (
+        2.5 if default_search_method == 'semantic_scholar' else 1.0
+    )
     
     task_state = running_tasks['generate_snowball_start']
     workflow_info = get_workflow_info()
@@ -1151,6 +1180,11 @@ def execute_generate_snowball_start():
                 log(f"Input file: {input_file}")
                 log(f"Search method: {search_method_str}")
                 log(f"Delay: {delay} seconds")
+                if search_method_str == 'semantic_scholar':
+                    if _get_semantic_scholar_api_key():
+                        log("Semantic Scholar API key detected (S2_API_KEY)")
+                    else:
+                        log("No Semantic Scholar API key — set S2_API_KEY for better rate limits")
                 
                 # Execute the generation (returns initial_pubs, seen_titles)
                 result = generate_snowball_start(
@@ -1245,12 +1279,14 @@ def start_iteration_page():
     
     # Default to iteration 1 if no current iteration
     default_iteration = (current_iteration + 1) if current_iteration is not None else 1
-    
+    default_snowball_direction = search_conf.get('snowball_direction', 'both') if search_conf else 'both'
+
     task_state = running_tasks['start_iteration']
-    
+
     return render_template('start_iteration.html',
                          default_iteration=default_iteration,
                          default_search_method=default_search_method,
+                         default_snowball_direction=default_snowball_direction,
                          is_running=task_state['is_running'],
                          logs=task_state['logs'][-50:],
                          workflow_info=workflow_info)
@@ -1270,6 +1306,10 @@ def execute_start_iteration():
         
         iteration = int(data.get('iteration'))
         search_method_str = data.get('search_method', 'google_scholar')
+        snowball_direction = data.get('snowball_direction', 'both')
+
+        if snowball_direction not in SNOWBALL_DIRECTIONS:
+            return jsonify({'error': f'Invalid snowball direction: {snowball_direction}'}), 400
         
         # Validate search method
         try:
@@ -1315,6 +1355,8 @@ def execute_start_iteration():
                 
                 log(f"Starting iteration {iteration}...")
                 log(f"Search method: {search_method_str}")
+                log(f"Snowball direction: {snowball_direction}")
+                direction_kwargs = snowball_direction_kwargs(snowball_direction)
                 
                 # Get seed publications from previous iteration
                 log(f"Fetching seed publications from iteration {iteration - 1}...")
@@ -1354,30 +1396,41 @@ def execute_start_iteration():
                     
                     citedby = initial_pub.id
                     try:
-                        articles = article_search.get_snowballing_articles(
-                            citedby, 
-                            iteration=iteration, 
-                            backwards=True, 
-                            forwards=True
+                        # Each result is an (ArticleData, direction) tuple where
+                        # direction is 'citation' or 'reference'.
+                        results = article_search.get_snowballing_articles(
+                            citedby,
+                            iteration=iteration,
+                            **direction_kwargs
                         )
                     except Exception as e:
                         log(f"  ✗ Error fetching articles: {str(e)}")
                         continue
-                    
-                    if len(articles) == 0:
+
+                    if len(results) == 0:
                         log(f"  No articles found")
                         continue
-                    
-                    log(f"  Found {len(articles)} articles")
-                    
+
+                    log(f"  Found {len(results)} articles")
+
+                    # Record provenance edges for every discovered article
+                    # (including duplicates not re-inserted as nodes) so the
+                    # citation/reference graph keeps all parent -> child links.
+                    edges = [
+                        (initial_pub.id, article.id, direction, iteration)
+                        for article, direction in results
+                        if initial_pub.id and article.id
+                    ]
+                    db_manager.insert_snowball_edges(edges)
+
                     # Filter out already seen articles
                     filtered_articles = [
-                        article for article in articles 
+                        article for article, _direction in results
                         if db_manager.get_seen_title(article.title) is None
                     ]
-                    
+
                     log(f"  {len(filtered_articles)} new articles")
-                    
+
                     if filtered_articles:
                         db_manager.insert_iteration_data(filtered_articles)
                         db_manager.insert_seen_titles_data(
@@ -1459,6 +1512,513 @@ def cancel_start_iteration():
         return jsonify({'success': True, 'message': 'Cancellation requested'})
     
     return jsonify({'error': 'No cancel flag available'}), 400
+
+
+@app.route('/workflow/generate_citation_graph', methods=['GET'])
+def generate_citation_graph_page():
+    """Page for generating the citation/reference graph."""
+    workflow_info = get_workflow_info()
+    task_state = running_tasks['generate_citation_graph']
+    return render_template('generate_citation_graph.html',
+                           is_running=task_state['is_running'],
+                           logs=task_state['logs'][-50:],
+                           outputs=task_state.get('outputs', {}),
+                           workflow_info=workflow_info)
+
+
+@app.route('/api/workflow/generate_citation_graph/execute', methods=['POST'])
+def execute_generate_citation_graph():
+    """Build the citation/reference graph and write output files."""
+    task_state = running_tasks['generate_citation_graph']
+
+    if task_state['is_running']:
+        return jsonify({'error': 'Task is already running'}), 400
+
+    try:
+        data = request.get_json() if request.is_json else request.form
+        edge_source = data.get('edge_source', 'both')
+        use_physics = bool(data.get('use_physics', False))
+        accepted_only = bool(data.get('accepted_only', False))
+        use_citations = bool(data.get('use_citations', True))
+        augment_openalex = bool(data.get('augment_openalex', False))
+
+        if edge_source not in EDGE_SOURCES:
+            return jsonify({'error': f'Invalid edge source: {edge_source}'}), 400
+
+        search_conf = load_search_conf()
+        if not search_conf or 'db_path' not in search_conf:
+            return jsonify({'error': 'Database path not configured. Please set up configuration first.'}), 400
+        db_path = search_conf['db_path']
+        if not os.path.exists(db_path):
+            return jsonify({'error': f'Database not found: {db_path}'}), 400
+
+        # Name outputs after the database so multiple DBs do not collide, with
+        # an "_accepted" suffix when restricted to content-approved papers (the
+        # reference cache is shared because the orchestrator strips that suffix).
+        basename = os.path.splitext(os.path.basename(db_path))[0] + "_graph"
+        if accepted_only:
+            basename += "_accepted"
+
+        task_state['is_running'] = True
+        task_state['progress'] = 0
+        task_state['total'] = 0
+        task_state['current_step'] = 'Starting...'
+        task_state['logs'] = []
+        task_state['outputs'] = {}
+        cancel_flag = threading.Event()
+        task_state['cancel_flag'] = cancel_flag
+
+        def worker():
+            try:
+                def log(msg):
+                    task_state['logs'].append(str(msg))
+                    if len(task_state['logs']) > 1000:
+                        task_state['logs'] = task_state['logs'][-1000:]
+
+                os.makedirs(GRAPHS_DIR, exist_ok=True)
+                log(f"Database: {db_path}")
+                log(f"Edge source: {edge_source}")
+                if accepted_only:
+                    log("Scope: content-approved (accepted) papers only.")
+                if edge_source in ('api', 'both'):
+                    log("Note: API reconstruction queries Semantic Scholar once per "
+                        "paper; this can take several minutes (results are cached).")
+
+                outputs = generate_citation_graph(
+                    db_path=db_path,
+                    output_dir=GRAPHS_DIR,
+                    edge_source=edge_source,
+                    formats=DEFAULT_FORMATS,
+                    basename=basename,
+                    accepted_only=accepted_only,
+                    use_citations=use_citations,
+                    augment_openalex=augment_openalex,
+                    use_physics=use_physics,
+                    log=log,
+                    cancel_flag=cancel_flag,
+                )
+
+                # Expose web paths for the UI (files live under static/).
+                web_outputs = {}
+                for fmt, path in outputs.items():
+                    web_outputs[fmt] = '/' + path.replace(os.sep, '/')
+                task_state['outputs'] = web_outputs
+                if not cancel_flag.is_set():
+                    log("✓ Graph generation complete.")
+            except Exception as e:
+                task_state['logs'].append(f"Error: {str(e)}")
+                import traceback
+                task_state['logs'].append(traceback.format_exc())
+            finally:
+                task_state['is_running'] = False
+                task_state['current_step'] = 'Completed' if not cancel_flag.is_set() else 'Cancelled'
+                task_state['cancel_flag'] = None
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        return jsonify({'success': True, 'message': 'Graph generation started'})
+
+    except Exception as e:
+        task_state['is_running'] = False
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflow/generate_citation_graph/status', methods=['GET'])
+def get_generate_citation_graph_status():
+    """Get status of the citation graph task."""
+    task_state = running_tasks['generate_citation_graph']
+    return jsonify({
+        'is_running': task_state['is_running'],
+        'progress': task_state['progress'],
+        'total': task_state['total'],
+        'current_step': task_state['current_step'],
+        'logs': task_state['logs'][-100:],
+        'outputs': task_state.get('outputs', {}),
+    })
+
+
+@app.route('/api/workflow/generate_citation_graph/cancel', methods=['POST'])
+def cancel_generate_citation_graph():
+    """Cancel the running citation graph task."""
+    task_state = running_tasks['generate_citation_graph']
+    if not task_state['is_running']:
+        return jsonify({'error': 'No task is running'}), 400
+    if task_state['cancel_flag']:
+        task_state['cancel_flag'].set()
+        task_state['logs'].append("Cancellation requested...")
+        return jsonify({'success': True, 'message': 'Cancellation requested'})
+    return jsonify({'error': 'No cancel flag available'}), 400
+
+
+# ---------------------------------------------------------------------------
+# Cluster explorer: navigate per-topic citation graphs with a details panel
+# ---------------------------------------------------------------------------
+
+def _load_clusters_manifest():
+    """Return the parsed cluster manifest dict, or None if not generated yet."""
+    path = os.path.join(CLUSTERS_DIR, MANIFEST_NAME)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _cluster_by_code(manifest, code):
+    for c in (manifest or {}).get('clusters', []):
+        if c.get('code') == code:
+            return c
+    return None
+
+
+@app.route('/clusters', methods=['GET'])
+def cluster_explorer_page():
+    """Interactive explorer to navigate per-cluster citation graphs."""
+    workflow_info = get_workflow_info()
+    manifest = _load_clusters_manifest()
+    task_state = running_tasks['generate_cluster_graphs']
+    return render_template(
+        'cluster_explorer.html',
+        has_clusters=bool(manifest and manifest.get('clusters')),
+        generated_at=(manifest or {}).get('generated_at', ''),
+        is_running=task_state['is_running'],
+        logs=task_state['logs'][-50:],
+        workflow_info=workflow_info,
+    )
+
+
+@app.route('/api/clusters', methods=['GET'])
+def api_clusters_list():
+    """Return the list of available clusters (from the manifest)."""
+    manifest = _load_clusters_manifest()
+    if not manifest:
+        return jsonify({'clusters': [], 'generated_at': ''})
+    # Only expose the lightweight fields the navigator needs.
+    clusters = [{
+        'code': c.get('code'),
+        'label': c.get('label'),
+        'depth': c.get('depth'),
+        'nodes': c.get('nodes'),
+        'edges': c.get('edges'),
+        'missing_papers': c.get('missing_papers', 0),
+    } for c in manifest.get('clusters', [])]
+    return jsonify({'clusters': clusters, 'generated_at': manifest.get('generated_at', '')})
+
+
+@app.route('/api/clusters/<code>', methods=['GET'])
+def api_cluster_graph(code):
+    """Return the nodes/edges JSON for a single cluster."""
+    manifest = _load_clusters_manifest()
+    c = _cluster_by_code(manifest, code)
+    if not c:
+        return jsonify({'error': f'Unknown cluster: {code}'}), 404
+    json_name = c.get('files', {}).get('json')
+    if not json_name:
+        return jsonify({'error': f'No JSON graph for cluster {code}'}), 404
+    path = os.path.join(CLUSTERS_DIR, json_name)
+    if not os.path.exists(path):
+        return jsonify({'error': f'Graph file missing: {json_name}'}), 404
+    with open(path, 'r', encoding='utf-8') as f:
+        graph = json.load(f)
+    return jsonify({
+        'code': c.get('code'),
+        'label': c.get('label'),
+        'full_label': c.get('full_label'),
+        'nodes': graph.get('nodes', []),
+        'edges': graph.get('edges', []),
+    })
+
+
+_search_index = {'key': None, 'items': None}
+
+
+def _authors_to_str(au):
+    """Normalise an iterations.authors value to a comma-separated name string."""
+    try:
+        data = json.loads(au) if isinstance(au, str) else au
+        if isinstance(data, list):
+            names = [x.get('name') if isinstance(x, dict) else str(x) for x in data]
+            return ', '.join(n for n in names if n)
+    except Exception:
+        pass
+    return au if isinstance(au, str) else ''
+
+
+def _build_search_index(manifest):
+    """One entry per paper appearing in any cluster graph:
+    {id, title, year, authors, codes:[cluster codes]}. Authors come from the
+    databases (not stored in the graph), matched by paper id."""
+    byid = {}
+    for c in manifest.get('clusters', []):
+        code = c.get('code')
+        jn = c.get('files', {}).get('json')
+        if not jn:
+            continue
+        p = os.path.join(CLUSTERS_DIR, jn)
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                g = json.load(f)
+        except Exception:
+            continue
+        for n in g.get('nodes', []):
+            e = byid.setdefault(n['id'], {
+                'id': n['id'], 'title': n.get('title', ''),
+                'year': n.get('year', ''), 'codes': set()})
+            e['codes'].add(code)
+    # Authors from whichever database holds the id (prefer first non-empty).
+    authors = {}
+    for db in sorted(glob.glob(os.path.join('databases', '*.db'))):
+        try:
+            con = sqlite3.connect(db)
+            rows = con.execute('select id, authors from iterations').fetchall()
+            con.close()
+        except Exception:
+            continue
+        for pid, au in rows:
+            if pid in byid and not authors.get(pid):
+                s = _authors_to_str(au)
+                if s:
+                    authors[pid] = s
+    items = []
+    for pid, e in byid.items():
+        e['authors'] = authors.get(pid, '')
+        e['codes'] = sorted(e['codes'])
+        items.append(e)
+    return items
+
+
+def _search_score(q, title, authors):
+    """Fuzzy relevance of a paper to query ``q`` over title and authors."""
+    import re as _re
+    import difflib
+    ql = q.lower().strip()
+    if not ql:
+        return 0.0
+    t = (title or '').lower()
+    a = (authors or '').lower()
+    sc = 0.0
+    if ql in t:
+        sc = max(sc, 0.95)
+    if ql in a:
+        sc = max(sc, 0.88)
+    qtok = set(_re.findall(r'[a-z0-9]+', ql))
+    if qtok:
+        ttok = set(_re.findall(r'[a-z0-9]+', t))
+        atok = set(_re.findall(r'[a-z0-9]+', a))
+        sc = max(sc, 0.7 * len(qtok & ttok) / len(qtok))
+        sc = max(sc, 0.7 * len(qtok & atok) / len(qtok))
+    sc = max(sc, 0.72 * difflib.SequenceMatcher(None, ql, t).ratio())
+    return sc
+
+
+@app.route('/api/clusters/search', methods=['GET'])
+def api_clusters_search():
+    """Fuzzy search papers (by title or author) across all cluster graphs."""
+    q = (request.args.get('q') or '').strip()
+    manifest = _load_clusters_manifest()
+    if not manifest or len(q) < 2:
+        return jsonify({'results': []})
+    key = manifest.get('generated_at')
+    if _search_index['key'] != key or _search_index['items'] is None:
+        _search_index['items'] = _build_search_index(manifest)
+        _search_index['key'] = key
+    scored = []
+    for e in _search_index['items']:
+        s = _search_score(q, e['title'], e['authors'])
+        if s >= 0.3:
+            scored.append((s, e))
+    scored.sort(key=lambda x: -x[0])
+    results = [{
+        'id': e['id'], 'title': e['title'], 'authors': e['authors'],
+        'year': e['year'], 'codes': e['codes'], 'score': round(s, 3),
+    } for s, e in scored[:20]]
+    return jsonify({'results': results})
+
+
+@app.route('/api/clusters/<code>/download/<fmt>', methods=['GET'])
+def api_cluster_download(code, fmt):
+    """Download a cluster graph file (graphml/gexf/json/html)."""
+    manifest = _load_clusters_manifest()
+    c = _cluster_by_code(manifest, code)
+    if not c:
+        return jsonify({'error': f'Unknown cluster: {code}'}), 404
+    fname = c.get('files', {}).get(fmt.lower())
+    if not fname:
+        return jsonify({'error': f'No {fmt} file for cluster {code}'}), 404
+    path = os.path.join(CLUSTERS_DIR, fname)
+    if not os.path.exists(path):
+        return jsonify({'error': f'File missing: {fname}'}), 404
+    as_download = fmt.lower() != 'html'
+    return send_file(os.path.abspath(path), as_attachment=as_download)
+
+
+@app.route('/api/clusters/execute', methods=['POST'])
+def execute_generate_cluster_graphs():
+    """(Re)generate per-cluster graphs by slicing the full accepted graph."""
+    task_state = running_tasks['generate_cluster_graphs']
+    if task_state['is_running']:
+        return jsonify({'error': 'Task is already running'}), 400
+
+    try:
+        data = request.get_json() if request.is_json else request.form
+        cluster_file = data.get('cluster_file', 'cluster_keywords.json')
+        code_prefix = data.get('code_prefix', 'T')
+
+        if not os.path.exists(cluster_file):
+            return jsonify({'error': f'Cluster file not found: {cluster_file}'}), 400
+
+        search_conf = load_search_conf()
+        if not search_conf or 'db_path' not in search_conf:
+            return jsonify({'error': 'Database path not configured.'}), 400
+        db_path = search_conf['db_path']
+
+        # Prefer slicing an already-generated accepted graph (no API calls).
+        candidates = glob.glob(os.path.join('graphs', '*accepted*.graphml')) + \
+            glob.glob(os.path.join(GRAPHS_DIR, '*accepted*.graphml'))
+        source_graph = max(candidates, key=os.path.getmtime) if candidates else None
+
+        task_state.update({'is_running': True, 'progress': 0, 'total': 0,
+                           'current_step': 'Starting...', 'logs': [], 'outputs': {}})
+        cancel_flag = threading.Event()
+        task_state['cancel_flag'] = cancel_flag
+
+        def worker():
+            try:
+                def log(msg):
+                    task_state['logs'].append(str(msg))
+                    if len(task_state['logs']) > 1000:
+                        task_state['logs'] = task_state['logs'][-1000:]
+
+                os.makedirs(CLUSTERS_DIR, exist_ok=True)
+                if source_graph:
+                    log(f"Slicing existing graph: {source_graph}")
+                else:
+                    log("No accepted graph found; will rebuild from the database "
+                        "(this queries Semantic Scholar/OpenAlex and is slow).")
+
+                results = generate_cluster_graphs(
+                    db_path=db_path,
+                    cluster_file=cluster_file,
+                    output_dir=CLUSTERS_DIR,
+                    code_prefix=code_prefix,
+                    source_graph_path=source_graph,
+                    log=log,
+                    cancel_flag=cancel_flag,
+                )
+                task_state['outputs'] = {'count': len(results)}
+                if not cancel_flag.is_set():
+                    log(f"✓ Generated {len(results)} cluster graphs.")
+            except Exception as e:
+                task_state['logs'].append(f"Error: {str(e)}")
+                import traceback
+                task_state['logs'].append(traceback.format_exc())
+            finally:
+                task_state['is_running'] = False
+                task_state['current_step'] = 'Completed' if not cancel_flag.is_set() else 'Cancelled'
+                task_state['cancel_flag'] = None
+
+        threading.Thread(target=worker, daemon=True).start()
+        return jsonify({'success': True, 'message': 'Cluster graph generation started'})
+
+    except Exception as e:
+        task_state['is_running'] = False
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clusters/execute/status', methods=['GET'])
+def get_generate_cluster_graphs_status():
+    task_state = running_tasks['generate_cluster_graphs']
+    return jsonify({
+        'is_running': task_state['is_running'],
+        'current_step': task_state['current_step'],
+        'logs': task_state['logs'][-100:],
+        'outputs': task_state.get('outputs', {}),
+    })
+
+
+@app.route('/api/clusters/execute/cancel', methods=['POST'])
+def cancel_generate_cluster_graphs():
+    task_state = running_tasks['generate_cluster_graphs']
+    if not task_state['is_running']:
+        return jsonify({'error': 'No task is running'}), 400
+    if task_state['cancel_flag']:
+        task_state['cancel_flag'].set()
+        task_state['logs'].append("Cancellation requested...")
+        return jsonify({'success': True, 'message': 'Cancellation requested'})
+    return jsonify({'error': 'No cancel flag available'}), 400
+
+
+def _find_references_cache(pid=None):
+    """Return the most suitable reconstructed-references cache, or None.
+
+    Prefers a cache that actually contains ``pid``; otherwise the one with the
+    most entries (the comprehensive cache, not a small test run's).
+    """
+    caches = glob.glob(os.path.join('graphs', '*_references_cache.json')) + \
+        glob.glob(os.path.join(GRAPHS_DIR, '*_references_cache.json'))
+    best, best_keys = None, -1
+    for cp in caches:
+        try:
+            with open(cp, 'r', encoding='utf-8') as f:
+                c = json.load(f)
+        except Exception:
+            continue
+        if pid and pid in c:
+            return cp
+        if len(c) > best_keys:
+            best, best_keys = cp, len(c)
+    return best
+
+
+def _find_accepted_graph(pid=None):
+    """Return the accepted-graph GraphML best matching ``pid`` (one that
+    contains it), or the largest, or None."""
+    cands = glob.glob(os.path.join('graphs', '*accepted*.graphml')) + \
+        glob.glob(os.path.join(GRAPHS_DIR, '*accepted*.graphml'))
+    best, best_n = None, -1
+    for gp in cands:
+        try:
+            import networkx as nx
+            g = nx.read_graphml(gp)
+        except Exception:
+            continue
+        if pid and g.has_node(pid):
+            return gp
+        if g.number_of_nodes() > best_n:
+            best, best_n = gp, g.number_of_nodes()
+    return best
+
+
+@app.route('/api/paper/<pid>/links', methods=['GET'])
+def api_paper_links(pid):
+    """Return a paper's references and citations for the explorer side panel."""
+    search_conf = load_search_conf()
+    if not search_conf or 'db_path' not in search_conf:
+        return jsonify({'error': 'Database path not configured.'}), 400
+    db_path = search_conf['db_path']
+
+    cache_path = _find_references_cache(pid)
+    if not cache_path:
+        return jsonify({'error': 'No references cache found. Generate the citation '
+                                 'graph first so references/citations are available.'}), 404
+
+    cluster_file = request.args.get('cluster_file', 'cluster_keywords.json')
+    refresh = request.args.get('refresh', '0') == '1'
+    # The accepted graph supplies the true edges (both directions + OpenAlex).
+    graph_path = _find_accepted_graph(pid)
+    try:
+        data = get_paper_links(
+            pid, db_path, cluster_file, cache_path,
+            graph_path=graph_path, output_dir=CLUSTERS_DIR, refresh=refresh,
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify(data)
 
 
 @app.route('/api/workflow/start_iteration/check_articles_without_id', methods=['GET'])
@@ -2259,7 +2819,8 @@ def filter_by_metadata_page():
     bibtex_skipped = 'Step 3: Get BibTeX' in skipped_steps
     conf_rank_skipped = 'Step 4: Assign Venue Ranks' in skipped_steps
     venue_filter_disabled = bibtex_skipped or conf_rank_skipped
-    
+    default_reject_preprints = search_conf.get('reject_preprints', True) if search_conf else True
+
     return render_template('filter_by_metadata.html',
                          default_iteration=default_iteration,
                          start_year=start_year,
@@ -2268,7 +2829,8 @@ def filter_by_metadata_page():
                          workflow_info=workflow_info,
                          venue_filter_disabled=venue_filter_disabled,
                          bibtex_skipped=bibtex_skipped,
-                         conf_rank_skipped=conf_rank_skipped)
+                         conf_rank_skipped=conf_rank_skipped,
+                         default_reject_preprints=default_reject_preprints)
 
 
 @app.route('/api/workflow/filter_by_metadata/articles', methods=['GET'])
@@ -2322,6 +2884,7 @@ def get_articles_for_metadata_filter():
                 'venue': article.venue or '',
                 'pub_year': article.pub_year or '',
                 'eprint_url': article.eprint_url or '',
+                'pub_url': article.pub_url or '',
                 'bibtex': article.bibtex or ''
             })
         
@@ -2332,6 +2895,26 @@ def get_articles_for_metadata_filter():
             'venue_filter_disabled': venue_filter_disabled
         })
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/workflow/filter_by_metadata/check_preprint', methods=['POST'])
+def check_preprint_publication():
+    """Check if article is a non-peer-reviewed preprint (arXiv, CORR, SSRN, etc.)"""
+    try:
+        data = request.get_json()
+        is_preprint, reason = is_preprint_publication(
+            venue=data.get('venue', ''),
+            bibtex=data.get('bibtex', ''),
+            eprint_url=data.get('eprint_url', ''),
+            pub_url=data.get('pub_url', ''),
+        )
+        return jsonify({
+            'success': True,
+            'is_preprint': is_preprint,
+            'reason': reason,
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -2500,6 +3083,7 @@ def evaluate_metadata_article():
         db_manager = DBManager(db_path)
         
         venue_filter_disabled = filter_options.get('venue_filter_disabled', False)
+        enable_preprint = filter_options.get('enablePreprintCheck', True)
         enable_venue = filter_options.get('enableVenueCheck', True) and not venue_filter_disabled
         enable_year = filter_options.get('enableYearCheck', True)
         enable_language = filter_options.get('enableLanguageCheck', True)
@@ -2508,8 +3092,21 @@ def evaluate_metadata_article():
         check_results = {}
         needs_user_input = False
         filter_result = None
-    
-        if enable_venue:
+        rejection_reason = None
+
+        if enable_preprint:
+            is_preprint, reason = is_preprint_publication(
+                venue=article.get('venue', ''),
+                bibtex=article.get('bibtex', ''),
+                eprint_url=article.get('eprint_url', ''),
+                pub_url=article.get('pub_url', ''),
+            )
+            check_results['preprint'] = is_preprint
+            if is_preprint:
+                filter_result = 'venue_filtered'
+                rejection_reason = reason
+
+        if enable_venue and filter_result is None:
             bibtex = article.get('bibtex', '')
             if bibtex:
                 result = automated_check_venue_and_peer_reviewed(bibtex, db_manager)
@@ -2589,8 +3186,9 @@ def evaluate_metadata_article():
         return jsonify({
             'success': True,
             'check_results': check_results,
-            'needs_user_input': needs_user_input and filter_result is None,  # Only needs input if no filter failed
-            'filter_result': filter_result  # Set if any filter failed or all passed
+            'needs_user_input': needs_user_input and filter_result is None,
+            'filter_result': filter_result,
+            'rejection_reason': rejection_reason,
         })
         
     except Exception as e:

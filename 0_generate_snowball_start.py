@@ -46,7 +46,10 @@ pg = get_proxy(search_conf["proxy_key"])
 def parse_args():
     parser = argparse.ArgumentParser(description='Generate snowball sampling starting points from file')
     parser.add_argument('--input_file', help='Path to the input file (json or text)', default=search_conf["initial_file"])
-    parser.add_argument('--delay', type=float, default=1.0, help='Delay between API requests in seconds (default: 1.0)')
+    default_delay = search_conf.get("request_delay")
+    if default_delay is None:
+        default_delay = 2.5 if search_conf.get("search_method") == "semantic_scholar" else 1.0
+    parser.add_argument('--delay', type=float, default=default_delay, help='Delay between API requests in seconds')
     parser.add_argument('--db_path', help='db path', type=str, default=search_conf["db_path"])
     parser.add_argument(
         '--search_method', 

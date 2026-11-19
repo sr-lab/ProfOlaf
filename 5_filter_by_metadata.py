@@ -32,19 +32,26 @@ def parse_args():
     parser.add_argument('--disable_year_check', help='disable year check', action='store_true')
     parser.add_argument('--disable_english_check', help='disable english check', action='store_true')
     parser.add_argument('--disable_download_check', help='disable download check', action='store_true')
+    parser.add_argument(
+        '--no-reject-preprints',
+        help='do not auto-reject arXiv, CORR, SSRN, and similar preprints',
+        action='store_true',
+    )
     args = parser.parse_args()
     return args
 
 def main():
     args = parse_args()
     db_manager = DBManager(args.db_path)
+    reject_preprints = search_conf.get("reject_preprints", True) and not args.no_reject_preprints
     filter_elements(
-        db_manager, 
-        args.iteration, 
-        args.disable_venue_check, 
-        args.disable_year_check, 
-        args.disable_english_check, 
-        args.disable_download_check
+        db_manager,
+        args.iteration,
+        args.disable_venue_check,
+        args.disable_year_check,
+        args.disable_english_check,
+        args.disable_download_check,
+        reject_preprints=reject_preprints,
     )
         
 if __name__ == "__main__":

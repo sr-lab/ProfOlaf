@@ -91,7 +91,7 @@
                         <!-- Configuration Form -->
                         <form id="startIterationForm">
                             <div class="row mb-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="iteration" class="form-label">
                                         <i class="fas fa-list-ol"></i> Target Iteration <span class="text-danger">*</span>
                                     </label>
@@ -99,7 +99,7 @@
                                            value="{{ default_iteration }}" min="1" required>
                                     <div class="form-text">Target iteration to generate. Seeds are read from iteration-1.</div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label for="search_method" class="form-label">
                                         <i class="fas fa-search"></i> Search Method
                                     </label>
@@ -109,6 +109,17 @@
                                         <option value="dblp" {% if default_search_method == 'dblp' %}selected{% endif %}>DBLP</option>
                                     </select>
                                     <div class="form-text">Database to search for citations and references</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="snowball_direction" class="form-label">
+                                        <i class="fas fa-arrows-alt-h"></i> Snowball Direction
+                                    </label>
+                                    <select class="form-select" id="snowball_direction" name="snowball_direction" required>
+                                        <option value="both" {% if default_snowball_direction == 'both' %}selected{% endif %}>Both (citations and references)</option>
+                                        <option value="forward" {% if default_snowball_direction == 'forward' %}selected{% endif %}>Forward only (citations)</option>
+                                        <option value="backward" {% if default_snowball_direction == 'backward' %}selected{% endif %}>Backward only (references)</option>
+                                    </select>
+                                    <div class="form-text" id="snowballDirectionHelp">Papers that cite the seed and/or papers the seed cites</div>
                                 </div>
                             </div>
 
@@ -200,6 +211,33 @@
         
         let statusInterval = null;
 
+        function updateSnowballDirectionHelp() {
+            const searchMethod = document.getElementById('search_method').value;
+            const direction = document.getElementById('snowball_direction').value;
+            const help = document.getElementById('snowballDirectionHelp');
+
+            if (searchMethod === 'google_scholar' && direction !== 'forward') {
+                help.textContent = 'Google Scholar only supports forward snowballing (citations).';
+                help.classList.add('text-warning');
+            } else if (searchMethod === 'dblp') {
+                help.textContent = 'DBLP does not support snowballing.';
+                help.classList.add('text-warning');
+            } else if (direction === 'forward') {
+                help.textContent = 'Fetch only papers that cite the seed publications.';
+                help.classList.remove('text-warning');
+            } else if (direction === 'backward') {
+                help.textContent = 'Fetch only papers referenced by the seed publications.';
+                help.classList.remove('text-warning');
+            } else {
+                help.textContent = 'Fetch papers that cite the seed and papers the seed cites.';
+                help.classList.remove('text-warning');
+            }
+        }
+
+        document.getElementById('search_method').addEventListener('change', updateSnowballDirectionHelp);
+        document.getElementById('snowball_direction').addEventListener('change', updateSnowballDirectionHelp);
+        updateSnowballDirectionHelp();
+
         function updateStatus() {
             fetch('/api/workflow/start_iteration/status')
                 .then(response => response.json())
@@ -254,7 +292,8 @@
             
             const formData = {
                 iteration: parseInt(document.getElementById('iteration').value),
-                search_method: document.getElementById('search_method').value
+                search_method: document.getElementById('search_method').value,
+                snowball_direction: document.getElementById('snowball_direction').value
             };
 
             executeBtn.disabled = true;

@@ -1,6 +1,7 @@
 import bibtexparser
 import json
 import os
+import re
 import sys
 
 from langdetect import detect
@@ -11,6 +12,83 @@ from ..cli.pretty_print_utils import format_color_string
 
 with open("confs/search_conf.json", "r") as f:
     search_conf = json.load(f)
+
+PREPRINT_VENUE_PATTERNS = (
+    r"\barxiv\b",
+    r"\bcorr\b",
+    r"\bcoRR\b",
+    r"\bssrn\b",
+    r"\bopenreview\b",
+    r"\bbiorxiv\b",
+    r"\bmedrxiv\b",
+    r"\bpreprint\b",
+)
+
+PREPRINT_URL_PATTERNS = (
+    r"arxiv\.org",
+    r"openreview\.net",
+    r"ssrn\.com",
+    r"biorxiv\.org",
+    r"medrxiv\.org",
+)
+
+
+def _text_indicates_preprint(text: str) -> bool:
+    if not text:
+        return False
+    text_lower = text.lower()
+    return any(re.search(pattern, text_lower) for pattern in PREPRINT_VENUE_PATTERNS)
+
+
+def _url_indicates_preprint(url: str) -> bool:
+    if not url:
+        return False
+    url_lower = url.lower()
+    return any(re.search(pattern, url_lower) for pattern in PREPRINT_URL_PATTERNS)
+
+
+def _bibtex_indicates_preprint(bibtex: str) -> bool:
+    if not bibtex:
+        return False
+    try:
+        library = bibtexparser.loads(bibtex)
+        if not library.entries:
+            return False
+        entry = library.entries[0]
+        for field in ("journal", "booktitle", "howpublished", "publisher", "venue"):
+            value = entry.get(field, "")
+            if value and _text_indicates_preprint(str(value)):
+                return True
+        archive_prefix = entry.get("archiveprefix", entry.get("archivePrefix", ""))
+        if str(archive_prefix).lower() == "arxiv":
+            return True
+        eprint = entry.get("eprint", "")
+        if str(eprint).lower().startswith("arxiv"):
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def is_preprint_publication(
+    venue: str = "",
+    bibtex: str = "",
+    eprint_url: str = "",
+    pub_url: str = "",
+) -> tuple[bool, str | None]:
+    """
+    Detect non-peer-reviewed preprints (arXiv, CORR, SSRN, OpenReview, etc.).
+
+    Checks venue metadata, download URLs, and BibTeX fields (not article titles).
+    """
+    for url in (eprint_url, pub_url):
+        if _url_indicates_preprint(url):
+            return True, f"preprint URL: {url}"
+    if _text_indicates_preprint(venue):
+        return True, f"preprint venue: {venue}"
+    if _bibtex_indicates_preprint(bibtex):
+        return True, "preprint indicators in BibTeX"
+    return False, None
 
 def is_year_valid(pub_year):
     """
@@ -112,7 +190,15 @@ def is_venue_and_peer_reviewed(bibtex_path, db_manager):
         else:
             print("Please enter 'y' for yes or 'n' for no.")
 
-def filter_elements(db_manager: DBManager, iteration: int, disable_venue_check, disable_year_check, disable_english_check, disable_download_check):
+def filter_elements(
+    db_manager: DBManager,
+    iteration: int,
+    disable_venue_check,
+    disable_year_check,
+    disable_english_check,
+    disable_download_check,
+    reject_preprints: bool = True,
+):
     """
     Filter the elements by metadata.
     """
@@ -140,7 +226,20 @@ def filter_elements(db_manager: DBManager, iteration: int, disable_venue_check, 
         print(f"Element {i+1} out of {len(article_data)}: {format_color_string(article.title, 'blue', 'bold')}")
         print(f"Venue: {format_color_string(article.venue, 'magenta', 'bold')}")
         print(f"Url: {format_color_string(article.eprint_url, 'green', 'bold')}")
-    
+
+        if reject_preprints:
+            is_preprint, reason = is_preprint_publication(
+                venue=article.venue or "",
+                bibtex=article.bibtex or "",
+                eprint_url=article.eprint_url or "",
+                pub_url=article.pub_url or "",
+            )
+            if is_preprint:
+                print(f"This paper is a non-peer-reviewed preprint ({reason})")
+                article.venue_filtered_out = True
+                updated_data.append((article.id, article.venue_filtered_out, "venue_filtered_out"))
+                continue
+
         if not disable_venue_check and not is_venue_and_peer_reviewed(article.bibtex, db_manager):
             print(f"This paper was not peer reviewed or it is not in one of the following ranks: {format_color_string(search_conf['venue_rank_list'], 'red', 'bold')}")
             article.venue_filtered_out = True

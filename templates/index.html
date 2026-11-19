@@ -184,6 +184,42 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Citation Graph Card -->
+                    <div class="col-md-3">
+                        <div class="card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <i class="fas fa-diagram-project fa-3x text-dark"></i>
+                                </div>
+                                <h5 class="card-title">Citation Graph</h5>
+                                <p class="card-text text-muted small">
+                                    Build and visualize the citation/reference graph, coloured by iteration
+                                </p>
+                                <a href="{{ url_for('generate_citation_graph_page') }}" class="btn btn-dark">
+                                    <i class="fas fa-share-nodes"></i> Citation Graph
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cluster Explorer Card -->
+                    <div class="col-md-3">
+                        <div class="card shadow h-100">
+                            <div class="card-body text-center">
+                                <div class="mb-3">
+                                    <i class="fas fa-circle-nodes fa-3x text-secondary"></i>
+                                </div>
+                                <h5 class="card-title">Cluster Explorer</h5>
+                                <p class="card-text text-muted small">
+                                    Navigate the citation graph of each topic cluster and inspect papers
+                                </p>
+                                <a href="{{ url_for('cluster_explorer_page') }}" class="btn btn-secondary">
+                                    <i class="fas fa-circle-nodes"></i> Cluster Explorer
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Info Card -->

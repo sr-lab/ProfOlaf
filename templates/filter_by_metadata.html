@@ -198,6 +198,13 @@
                                                     <br><small class="text-muted">Filter by download availability</small>
                                                 </label>
                                             </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" id="enablePreprintCheck" {% if default_reject_preprints %}checked{% endif %}>
+                                                <label class="form-check-label" for="enablePreprintCheck">
+                                                    <strong><i class="fas fa-file-alt"></i> Reject Preprints</strong>
+                                                    <br><small class="text-muted">Auto-reject arXiv, CORR, SSRN, OpenReview, and similar non-peer-reviewed venues</small>
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -261,6 +268,19 @@
                                     <!-- Filter Checks -->
                                     <h5 class="mt-4 mb-3"><i class="fas fa-check-circle"></i> Filter Checks</h5>
                                     
+                                    <!-- Preprint Check -->
+                                    <div class="check-item" id="preprintCheck">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong><i class="fas fa-file-alt"></i> Peer-Reviewed Publication</strong>
+                                                <p class="mb-0 small text-muted">Reject arXiv, CORR, SSRN, OpenReview, and similar preprints</p>
+                                            </div>
+                                            <div id="preprintCheckStatus">
+                                                <span class="badge bg-secondary">Pending</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Venue & Peer-Review Check -->
                                     <div class="check-item" id="venueCheck">
                                         <div class="d-flex justify-content-between align-items-center">
@@ -383,12 +403,14 @@
         let currentArticleIndex = -1;
         let currentArticle = null;
         let checkResults = {
+            preprint: null,
             venue: null,
             year: null,
             language: null,
             download: null
         };
         let filterOptions = {
+            enablePreprintCheck: {% if default_reject_preprints %}true{% else %}false{% endif %},
             enableVenueCheck: {% if not venue_filter_disabled %}true{% else %}false{% endif %},
             enableYearCheck: true,
             enableLanguageCheck: true,
@@ -426,6 +448,7 @@
             // Get filter options (respect disabled state for venue check)
             const venueCheckbox = document.getElementById('enableVenueCheck');
             filterOptions = {
+                enablePreprintCheck: document.getElementById('enablePreprintCheck').checked,
                 enableVenueCheck: venueCheckbox.disabled ? false : venueCheckbox.checked,
                 enableYearCheck: document.getElementById('enableYearCheck').checked,
                 enableLanguageCheck: document.getElementById('enableLanguageCheck').checked,
@@ -518,6 +541,7 @@
                         article: article,
                         iteration: parseInt(document.getElementById('iteration').value),
                         filter_options: {
+                            enablePreprintCheck: filterOptions.enablePreprintCheck,
                             enableVenueCheck: filterOptions.enableVenueCheck,
                             enableYearCheck: filterOptions.enableYearCheck,
                             enableLanguageCheck: filterOptions.enableLanguageCheck,
@@ -537,9 +561,9 @@
                         console.log('Article skipped: no ID available', article);
                         autoProcessed++;
                     } else if (evalData.filter_result) {
-                        // A filter failed (or all passed) - auto-process immediately
-                        // This happens when venue/year/language/download check fails,
-                        // even if other checks needed user input - we skip those since article is already filtered
+                        if (evalData.rejection_reason) {
+                            console.log('Auto-rejected:', article.title, '-', evalData.rejection_reason);
+                        }
                         saveArticleResult(article.id, evalData.filter_result, false);
                         autoProcessed++;
                     } else if (evalData.needs_user_input) {
@@ -649,6 +673,7 @@
 
             // Reset check results
             checkResults = {
+                preprint: null,
                 venue: null,
                 year: null,
                 language: null,
@@ -667,23 +692,31 @@
 
         function runAllChecks() {
             // Reset UI
+            resetCheckUI('preprintCheck');
             resetCheckUI('venueCheck');
             resetCheckUI('yearCheck');
             resetCheckUI('languageCheck');
             resetCheckUI('downloadCheck');
 
             // Hide/show checks based on options
+            const preprintCheckDiv = document.getElementById('preprintCheck');
             const venueCheckDiv = document.getElementById('venueCheck');
             const yearCheckDiv = document.getElementById('yearCheck');
             const languageCheckDiv = document.getElementById('languageCheck');
             const downloadCheckDiv = document.getElementById('downloadCheck');
             
+            preprintCheckDiv.style.display = filterOptions.enablePreprintCheck ? 'block' : 'none';
             venueCheckDiv.style.display = filterOptions.enableVenueCheck ? 'block' : 'none';
             yearCheckDiv.style.display = filterOptions.enableYearCheck ? 'block' : 'none';
             languageCheckDiv.style.display = filterOptions.enableLanguageCheck ? 'block' : 'none';
             downloadCheckDiv.style.display = filterOptions.enableDownloadCheck ? 'block' : 'none';
 
             // If a check is disabled, automatically set it to passed
+            if (!filterOptions.enablePreprintCheck) {
+                checkResults.preprint = true;
+                document.getElementById('preprintCheck').className = 'check-item passed';
+                document.getElementById('preprintCheckStatus').innerHTML = '<span class="badge bg-secondary"><i class="fas fa-ban"></i> Disabled</span>';
+            }
             if (!filterOptions.enableVenueCheck) {
                 checkResults.venue = true;
                 document.getElementById('venueCheck').className = 'check-item passed';
@@ -707,6 +740,7 @@
 
             // Run enabled checks in parallel
             const checks = [];
+            if (filterOptions.enablePreprintCheck) checks.push(checkPreprint());
             if (filterOptions.enableVenueCheck) checks.push(checkVenue());
             if (filterOptions.enableYearCheck) checks.push(checkYear());
             if (filterOptions.enableLanguageCheck) checks.push(checkLanguage());
@@ -725,6 +759,40 @@
             checkDiv.className = 'check-item';
             statusDiv.innerHTML = '<span class="badge bg-secondary">Pending</span>';
             buttonsDiv.style.display = 'none';
+        }
+
+        function checkPreprint() {
+            return fetch('/api/workflow/filter_by_metadata/check_preprint', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    venue: currentArticle.venue || '',
+                    bibtex: currentArticle.bibtex || '',
+                    eprint_url: currentArticle.eprint_url || '',
+                    pub_url: currentArticle.pub_url || ''
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Preprint check error:', data.error);
+                    return;
+                }
+
+                const checkDiv = document.getElementById('preprintCheck');
+                const statusDiv = document.getElementById('preprintCheckStatus');
+
+                if (data.is_preprint) {
+                    checkResults.preprint = false;
+                    checkDiv.className = 'check-item failed';
+                    const reason = data.reason ? ` (${data.reason})` : '';
+                    statusDiv.innerHTML = `<span class="badge bg-danger"><i class="fas fa-times"></i> Preprint${escapeHtml(reason)}</span>`;
+                } else {
+                    checkResults.preprint = true;
+                    checkDiv.className = 'check-item passed';
+                    statusDiv.innerHTML = '<span class="badge bg-success"><i class="fas fa-check"></i> Passed</span>';
+                }
+            });
         }
 
         function checkVenue() {
@@ -940,12 +1008,13 @@
 
         function updateSaveButton() {
             // Check if all enabled checks are complete
+            const preprintComplete = !filterOptions.enablePreprintCheck || checkResults.preprint !== null;
             const venueComplete = !filterOptions.enableVenueCheck || checkResults.venue !== null;
             const yearComplete = !filterOptions.enableYearCheck || checkResults.year !== null;
             const languageComplete = !filterOptions.enableLanguageCheck || checkResults.language !== null;
             const downloadComplete = !filterOptions.enableDownloadCheck || checkResults.download !== null;
             
-            const allComplete = venueComplete && yearComplete && languageComplete && downloadComplete;
+            const allComplete = preprintComplete && venueComplete && yearComplete && languageComplete && downloadComplete;
             
             saveAndNextBtn.disabled = !allComplete;
             document.getElementById('actionWarning').style.display = allComplete ? 'none' : 'block';
@@ -975,7 +1044,9 @@
             
             // Determine filter result (only check enabled filters)
             let filterResult = 'approved';
-            if (filterOptions.enableVenueCheck && checkResults.venue === false) {
+            if (filterOptions.enablePreprintCheck && checkResults.preprint === false) {
+                filterResult = 'venue_filtered';
+            } else if (filterOptions.enableVenueCheck && checkResults.venue === false) {
                 filterResult = 'venue_filtered';
             } else if (filterOptions.enableYearCheck && checkResults.year === false) {
                 filterResult = 'year_filtered';

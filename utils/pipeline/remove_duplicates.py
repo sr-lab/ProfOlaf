@@ -9,6 +9,16 @@ with open("confs/search_conf.json", "r") as f:
     search_conf = json.load(f)
 
 
+def _to_int(value, default: int = 0) -> int:
+    """Best-effort integer parse. num_citations and pub_year are stored as TEXT
+    (and read back as strings), so comparisons must cast them to int first,
+    otherwise `>` compares lexicographically (e.g. "100" < "9")."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def calculate_title_similarity(title1: str, title2: str) -> float:
     """
     Calculate similarity between two titles using SequenceMatcher.
@@ -123,11 +133,14 @@ def remove_duplicates(db_manager: DBManager, iterations: List[int],
         print(f"\nProcessing duplicate pair {i}/{len(duplicates)}")
         
         if auto_remove:
-            if article1.num_citations > article2.num_citations:
+            # Keep the more-cited paper; break ties by the more recent year.
+            cit1, cit2 = _to_int(article1.num_citations, -1), _to_int(article2.num_citations, -1)
+            year1, year2 = _to_int(article1.pub_year, 0), _to_int(article2.pub_year, 0)
+            if cit1 > cit2:
                 keep_id, remove_id = article1.id, article2.id
-            elif article2.num_citations > article1.num_citations:
+            elif cit2 > cit1:
                 keep_id, remove_id = article2.id, article1.id
-            elif article1.pub_year > article2.pub_year:
+            elif year1 > year2:
                 keep_id, remove_id = article1.id, article2.id
             else:
                 keep_id, remove_id = article2.id, article1.id

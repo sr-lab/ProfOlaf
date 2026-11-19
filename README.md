@@ -297,6 +297,51 @@ The task assistant module is run using `11_task_assistant.py`. Add prompt files 
 | `--single-pdf` | Process a single PDF | — |
 | `--max-workers` | Parallel workers | `1` |
 
+### Citation / Reference Graph
+
+`12_generate_citation_graph.py` builds the citation/reference graph of the articles in a
+database. Edges are directed *citing → cited*, and nodes are coloured by the iteration in
+which each article was first discovered. It writes GraphML and GEXF files (for Gephi /
+Cytoscape), a nodes/edges JSON, and a self-contained interactive HTML visualization.
+
+Edges come from two sources: the `snowball_edges` provenance table (recorded during
+snowballing from iterations run after this feature was added), and/or a reconstruction that
+re-queries Semantic Scholar for every paper and keeps edges whose endpoints are both in the
+corpus. Reconstructed references are cached next to the output so re-runs are fast. Databases
+created before provenance recording have no recorded edges and should use `--edge_source api`
+(or `both`).
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--db_path` | Database to read | configured `db_path` |
+| `--edge_source` | `db`, `api`, or `both` | `both` |
+| `--accepted_only` | Only include papers that passed content screening and were selected | off |
+| `--references_only` | Query only `/references` (skip `/citations`) during reconstruction | off |
+| `--openalex` | Cross-fill missing edges from OpenAlex (DOI-matched) | off |
+| `--output_dir` | Where graph files are written | `graphs` |
+| `--basename` | Base filename (without extension) | `citation_graph` |
+| `--formats` | Comma-separated: `graphml,gexf,json,html` | all |
+| `--physics` | Enable in-browser physics in the HTML view | off |
+
+With `--accepted_only`, only content-approved papers are included (and edges only between
+them); output files get an `_accepted` suffix, while the Semantic Scholar reference cache is
+shared with the full run so queries are not repeated.
+
+**Recovering missing edges.** Semantic Scholar often stores a citation link on only one side
+(the citing paper's references *or* the cited paper's citations), so by default the
+reconstruction queries both endpoints and unions them; `--references_only` reverts to the
+faster one-sided pass. `--openalex` goes further, resolving each paper's DOI (via the Semantic
+Scholar batch endpoint) and pulling OpenAlex's `referenced_works` to fill links Semantic
+Scholar lacks entirely — this only helps papers that have a DOI.
+
+**Isolated nodes.** In `--accepted_only` mode a paper can be isolated for two reasons, shown
+by its border in the HTML view: an **orange** border means the paper does cite (or is cited by)
+other papers in the corpus, but those were removed by the accepted-only filter — build the full
+graph to see them; a **grey** border means the paper has no link to any corpus paper at all.
+Nodes with a normal border are connected.
+
+The same feature is available in the web application under **Analysis Tools → Citation Graph**.
+
 ---
 
 ## Web Application

@@ -4,31 +4,66 @@ import sys
 from ..db_management import DBManager
 from ..article_search.article_search_method import ArticleSearch, SemanticScholarSearchMethod, GoogleScholarSearchMethod, DBLPSearchMethod
 
+SNOWBALL_DIRECTIONS = ("forward", "backward", "both")
 
-def get_articles(iteration: int, initial_pubs, db_manager: DBManager, article_search: ArticleSearch, verbose: bool = False):
+
+def snowball_direction_kwargs(snowball_direction: str) -> dict:
     """
-    Get articles that cite the pubs for the given iteration.
+    Map user-facing snowball direction to provider kwargs.
+
+    Forward snowballing = citations (papers that cite the seed).
+    Backward snowballing = references (papers the seed cites).
+
+    Note: provider kwargs use inverted names (backwards=citations, forwards=references).
     """
-    
+    if snowball_direction not in SNOWBALL_DIRECTIONS:
+        raise ValueError(f"Invalid snowball direction: {snowball_direction}. Must be one of {SNOWBALL_DIRECTIONS}")
+    return {
+        "backwards": snowball_direction in ("forward", "both"),
+        "forwards": snowball_direction in ("backward", "both"),
+    }
+
+
+def get_articles(iteration: int, initial_pubs, db_manager: DBManager, article_search: ArticleSearch, verbose: bool = False, snowball_direction: str = "both"):
+    """
+    Get articles from snowballing for the given iteration.
+    """
+    direction_kwargs = snowball_direction_kwargs(snowball_direction)
+
     for initial_pub in tqdm(initial_pubs, desc="Getting articles from snowballing..."):
         citedby = initial_pub.id
-        
-        articles = article_search.get_snowballing_articles(citedby, iteration=iteration, backwards=True, forwards=True)
-        if len(articles) == 0:
+
+        # Each result is an (ArticleData, direction) tuple where direction is
+        # 'citation' or 'reference'.
+        results = article_search.get_snowballing_articles(citedby, iteration=iteration, **direction_kwargs)
+        if len(results) == 0:
             continue
-        
+
         if verbose:
-            print("Citedby: ", citedby, "Total Results: ", len(articles))
+            print("Citedby: ", citedby, "Total Results: ", len(results))
 
         sys.stdout.flush()
 
-        filtered_articles = [article for article in articles if db_manager.get_seen_title(article.title) is None]
+        # Record provenance edges for every discovered article, including
+        # duplicates that are not re-inserted as nodes, so the citation/
+        # reference graph keeps all parent -> child links.
+        edges = [
+            (initial_pub.id, article.id, direction, iteration)
+            for article, direction in results
+            if initial_pub.id and article.id
+        ]
+        db_manager.insert_snowball_edges(edges)
+
+        filtered_articles = [
+            article for article, _direction in results
+            if db_manager.get_seen_title(article.title) is None
+        ]
         if verbose:
             print(f"Found {len(filtered_articles)} new articles from {initial_pub.title}")
 
         db_manager.insert_iteration_data(filtered_articles)
         db_manager.insert_seen_titles_data([(article.title, article.id) for article in filtered_articles])
-    
+
     sys.stdout.flush()
 
 def repair_references(iteration: int, db_manager: DBManager, verbose: bool = False):

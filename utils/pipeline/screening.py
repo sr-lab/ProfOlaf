@@ -260,8 +260,9 @@ def undo_decision(db_manager, article, iteration, rater, screening_phase: str="t
     }
     
     db_manager.update_screening_data(
-        iteration=iteration, 
-        article_id=article.id, 
+        iteration=iteration,
+        article_id=article.id,
+        rater=rater,
         **update_kwargs
     )
 

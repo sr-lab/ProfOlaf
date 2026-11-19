@@ -1,1 +1,90 @@
-Are Large Language Models Memorizing Bug Benchmarks?
+Evaluating the End-User Experience of Private Browsing Mode 
+From Secure to Military-Grade: Exploring the Effect of App Descriptions on User Perceptions of Secure Messaging
+Do Women in Conservative Societies (Not) Follow Smartphone Security Advice? A Case Study of Saudi Arabia and Pakistan
+Faheem: Explaining URLs to people using a Slack bot
+Usable Security: Revealing End-Users Comprehensions on Security Warnings
+Help the User Recognize a Phishing Scam: Design of Explanation Messages in Warning Interfaces for Phishing Attacks
+HappyPermi: Presenting Critical Data Flows in Mobile Application to Raise User Security Awareness
+Enhancing Game-Based Learning Through Infographics in the Context of Smart Home Security
+``I have no idea what they're trying to accomplish:{''} Enthusiastic and Casual Signal Users' Understanding of Signal PINs
+Browser interfaces and extended validation SSL certificates: An empirical study
+Improving computer security dialogs
+Replication: No One Can Hack My Mind Revisiting a Study on Expert and Non-Expert Security Practices and Advice - PROCEEDINGS OF THE FIFTEENTH SYMPOSIUM ON USABLE PRIVACY AND SECURITY (SOUPS 2019)
+Smart Storytelling: Video and Text Risk Communication to Increase MFA Acceptability
+Does MoodyBoard Make Internet Use more Secure? Evaluating an Ambient Security Visualization Tool - 29TH ANNUAL CHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS
+Explanations in warning dialogs to help users defend against phishing attacks
+Making Encryption Feel Secure: Investigating how Descriptions of Encryption Impact Perceived Security
+Complex, but in a good way? How to represent encryption to non-experts through text and visuals – Evidence from expert co-creation and a vignette experiment
+Preliminary Insights in Security Warning Studies: An Exploration in University Context - FIFTH INFORMATION SYSTEMS INTERNATIONAL CONFERENCE
+Why do they do what they do? A study of what motivates users to (not) follow computer security advice
+To Follow or Not to Follow: A Study of User Motivations around Cybersecurity Advice
+Exploring User-Centered Security Design for Usable Authentication Ceremonies - CHI `21: PROCEEDINGS OF THE 2021 CHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS
+Android permissions: user attention, comprehension, and behavior
+The Effect of Entertainment Media on Mental Models of Computer Security - PROCEEDINGS OF THE FIFTEENTH SYMPOSIUM ON USABLE PRIVACY AND SECURITY (SOUPS 2019)
+The challenges of understanding and using security: A survey of end-users
+Effective Risk Communication for Android Apps
+“What was that site doing with my Facebook password?” Designing password-reuse notifications
+Developers deserve security warnings, too: On the effect of integrated security advice on cryptographic API misuse
+``I just looked for the solution!{''}On Integrating Security-Relevant Information in Non-Security API Documentation to Support Secure Coding Practices
+Developing Visualisations to Enhance an Insider Threat Product: A Case Study
+Must I, can I? I don't understand your ambiguous password rules
+On the comprehension of security risk scenarios
+Signalling over-privileged mobile applications using passive security indicators
+Understanding Users' Knowledge about the Privacy and Security of Browser Extensions - PROCEEDINGS OF THE SEVENTEENTH SYMPOSIUM ON USABLE PRIVACY AND SECURITY (SOUPS 2021)
+sD&D: Design and Implementation of Cybersecurity Educational Game with Highly Extensible Functionality
+Using Statistical Information to Communicate Android Permission Risks to Users
+Understanding sensor notifications on mobile devices
+Does Context Influence Responses to Firewall Warnings? - 2012 ECRIME RESEARCHERS SUMMIT (ECRIME)
+Enhancing the usability of android application permission model
+Understanding Perceptions: User Responses to Browser Warning Messages - HCI FOR CYBERSECURITY, PRIVACY AND TRUST
+Developing Accessible and Usable Security (ACCUS) Heuristics - CHI 2018: EXTENDED ABSTRACTS OF THE 2018 CHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS
+Put Your Warning Where Your Link Is: Improving and Evaluating Email Phishing Warnings - CHI 2019: PROCEEDINGS OF THE 2019 CHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS
+A brick wall, a locked door, and a bandit: A physical security metaphor for firewall warnings
+Revealing hidden context: Improving mental models of personal firewall users
+How I Learned to be Secure: a Census-Representative Survey of Security Advice Sources and Behavior
+I Think They're Trying to Tell Me Something: Advice Sources and Selection for Digital Security
+An Experience Sampling Study of User Reactions to Browser Warnings in the Field - PROCEEDINGS OF THE 2018 CHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS (CHI 2018)
+User-Centered Design of Visualizations for Software Vulnerability Reports
+Symbolism in Computer Security Warnings: Signal Icons and Signal Words
+Gamification Techniques for Raising Cyber Security Awareness - HCI FOR CYBERSECURITY, PRIVACY AND TRUST
+NetVisGame: Mobile Gamified Information Visualization of Home Network Traffic Data - PROCEEDINGS OF THE 17TH INTERNATIONAL JOINT CONFERENCE ON COMPUTER VISION, IMAGING AND COMPUTER GRAPHICS THEORY AND APPLICATIONS (IVAPP), VOL 3
+Anti-Phishing Phil: the design and evaluation of a game that teaches people not to fall for phish
+Supporting visual security cues for WebView-based Android apps
+Towards Improving the Efficacy of Windows Security Notifier for Apps from Unknown Publishers: The Role of Rhetoric
+Exploring User Reactions to New Browser Cues for Extended Validation Certificates - COMPUTER SECURITY - ESORIC 2008, PROCEEDINGS
+Using cartoons to teach Internet security
+The Effect of Developer-Specified Explanations for Permission Requests on Smartphone User Behavior - 32ND ANNUAL ACM CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS (CHI 2014)
+Will You Trust This TLS Certificate? Perceptions of People Working in IT (Extended Version)
+Design and Evaluation of a Data-Driven Password Meter - PROCEEDINGS OF THE 2017 ACM SIGCHI CONFERENCE ON HUMAN FACTORS IN COMPUTING SYSTEMS (CHI'17)
+"It builds trust with the customers" - Exploring User Perceptions of the Padlock Icon in Browser UI
+Do security toolbars actually prevent phishing attacks?
+Catering to Your Concerns: Automatic Generation of Personalised Security-Centric Descriptions for Android Apps
+Effects of the design of mobile security notifications and mobile app usability on users' security perceptions and continued use intention
+What risk? i don't understand. An Empirical Study on Users' Understanding of the Terms Used in Security Texts
+An Explainable Password Strength Meter Addon via Textual Pattern Recognition
+Appraisal on User's Comprehension in Security Warning Dialogs: Browsers Usability Perspective - ADVANCES IN CYBER SECURITY (ACES 2019)
+Visual analytics and visualization for android security risk
+A study on improving security warnings
+What Could Go Wrong? Raising Mobile Privacy and Security Awareness Through a Decision-Making Game - CHI PLAY'19: EXTENDED ABSTRACTS OF THE ANNUAL SYMPOSIUM ON COMPUTER-HUMAN INTERACTION IN PLAY
+Stop clicking on "update later": Persuading users they need up-to-date antivirus protection
+Towards Automatic Generation of Security-Centric Descriptions for Android Apps - CCS'15: PROCEEDINGS OF THE 22ND ACM SIGSAC CONFERENCE ON COMPUTER AND COMMUNICATIONS SECURITY
+The Role of Instructional Design in Persuasion: A Comics Approach for Improving Cybersecurity
+A Mobile App for Assisting Users to Make Informed Selections in Security Settings for Protecting Personal Health Data: Development and Feasibility Study
+A Comprehensive Quality Evaluation of Security and Privacy Advice on the Web
+“It's Time. Time for Digital Security.”: An End User Study on Actionable Security and Privacy Advice
+Encouraging Organisational Information Security Incident Reporting
+APOLLO: A GPT-based tool to detect phishing emails and generate explanations that warn users
+Survey and Analysis of User Perceptions of Security Icons
+Understandability of the Technology and Benefit May Not Be Enough to Nudge Users: An Exploratory Study in the Context of FIDO2 Adoption Behavior
+A Study on Web User's Attitude and Knowledge Towards Data Security and Privacy Issues of Web Browser Extensions
+Do Users Really Know Alexa? Understanding Alexa Skill Security Indicators
+Understanding Users' Interaction with Login Notifications
+Understanding the Viability of Gmail's Origin Indicator for Identifying the Sender
+Analysis of Non-Experts' Security- and Privacy-Related Questions on a Q&A Site
+User Experience and Information Security Heuristics for Digital Identity Wallets
+“It’s Definitely New and Different…It’s Really Engaging”: Understanding the Power of Storytelling Towards Secure Password Creation
+Assessing Suspicious Emails with Banner Warnings Among Blind and Low-Vision Users in Realistic Settings
+Usability, Efficacy, and Acceptability of the U.S. Cyber Trust Mark
+A Framework for Reasoning about Social Influences on Security and Privacy Adoption
+Security Education Using Screen Reader: Utilizing a Problem-Posing Approach
+Privacy Pal: Improving Permission Safety Awareness of Third Party Applications in Online Social Networks

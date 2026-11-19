@@ -85,6 +85,7 @@
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle"></i> 
                             This step reads paper titles from a file and searches for them in the selected database, creating the initial seed for iteration 0.
+                            <br><small class="text-muted mt-1 d-block">For Semantic Scholar, use a delay of at least 2.5s and set <code>S2_API_KEY</code> in your environment for higher rate limits (free key from <a href="https://www.semanticscholar.org/product/api" target="_blank" rel="noopener">Semantic Scholar API</a>).</small>
                         </div>
 
                         <!-- Configuration Form -->
@@ -118,7 +119,7 @@
                                     </label>
                                     <input type="number" class="form-control" id="delay" name="delay" 
                                            value="{{ default_delay }}" min="0" step="0.1" required>
-                                    <div class="form-text">Delay between API requests to avoid rate limiting</div>
+                                    <div class="form-text" id="delayHelp">Delay between title searches. Use 2.5s+ for Semantic Scholar.</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label for="search_method" class="form-label">
@@ -192,6 +193,23 @@
         const logOutput = document.getElementById('logOutput');
         
         let statusInterval = null;
+
+        function updateDelayHelp() {
+            const searchMethod = document.getElementById('search_method').value;
+            const delayInput = document.getElementById('delay');
+            const help = document.getElementById('delayHelp');
+            if (searchMethod === 'semantic_scholar') {
+                help.textContent = 'Use at least 2.5s for Semantic Scholar. Set S2_API_KEY for a dedicated 1 req/s limit.';
+                if (parseFloat(delayInput.value) < 2.5) {
+                    delayInput.value = '2.5';
+                }
+            } else {
+                help.textContent = 'Delay between title searches to avoid rate limiting.';
+            }
+        }
+
+        document.getElementById('search_method').addEventListener('change', updateDelayHelp);
+        updateDelayHelp();
 
         function handleFileUpload(event) {
             const file = event.target.files[0];

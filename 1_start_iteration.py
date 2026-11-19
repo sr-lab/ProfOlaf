@@ -19,7 +19,7 @@ from utils.article_search.article_search_method import (
     SearchMethod,
 )
 
-from utils.pipeline.start_iteration_utils import get_articles, repair_references
+from utils.pipeline.start_iteration_utils import get_articles, repair_references, SNOWBALL_DIRECTIONS
 
 
 load_dotenv()
@@ -43,6 +43,13 @@ def parse_args():
         type=str,
         default="",
         choices=["remove", "manual"])
+    parser.add_argument(
+        '--snowball_direction',
+        help='Snowballing direction: forward (citations only), backward (references only), or both',
+        type=str,
+        default=search_conf.get("snowball_direction", "both"),
+        choices=list(SNOWBALL_DIRECTIONS),
+    )
     parser.add_argument('--verbose', action='store_true')  
     args = parser.parse_args()
     return args
@@ -69,7 +76,7 @@ if __name__ == "__main__":
     sys.stdout.flush()
     search_method_instance = SearchMethod(args.search_method).create_instance()
     article_search = ArticleSearch(search_method_instance)
-    get_articles(args.iteration, initial_pubs, db_manager, article_search, args.verbose)
+    get_articles(args.iteration, initial_pubs, db_manager, article_search, args.verbose, args.snowball_direction)
     
     if args.repair == "manual":
         repair_references(args.iteration, db_manager, args.verbose)

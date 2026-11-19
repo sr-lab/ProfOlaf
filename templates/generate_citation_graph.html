@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citation Graph - ProfOlaf</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4 mb-5">
+        <div class="row justify-content-center">
+            <div class="col-md-11">
+                <div class="card shadow">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <h2 class="mb-0">
+                            <i class="fas fa-diagram-project"></i> Citation / Reference Graph
+                        </h2>
+                        <a href="{{ url_for('index') }}" class="btn btn-light btn-sm">
+                            <i class="fas fa-arrow-left"></i> Back to Home
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            Builds a directed graph of the articles in the current database. Edges are oriented
+                            <em>citing&nbsp;&rarr;&nbsp;cited</em>. Nodes are coloured by the iteration in which
+                            they were first discovered. Outputs are a GraphML and GEXF file (for Gephi / Cytoscape),
+                            a nodes/edges JSON, and an interactive HTML view.
+                        </div>
+
+                        <form id="graphForm">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="edge_source" class="form-label">
+                                        <i class="fas fa-link"></i> Edge Source
+                                    </label>
+                                    <select class="form-select" id="edge_source" name="edge_source" required>
+                                        <option value="both" selected>Both (recorded + reconstructed)</option>
+                                        <option value="db">Recorded provenance only</option>
+                                        <option value="api">Reconstruct from Semantic Scholar</option>
+                                    </select>
+                                    <div class="form-text" id="edgeSourceHelp">
+                                        Union of recorded snowball edges and edges reconstructed from the API.
+                                    </div>
+                                </div>
+                                <div class="col-md-6 d-flex flex-column justify-content-end">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="accepted_only" name="accepted_only">
+                                        <label class="form-check-label" for="accepted_only">
+                                            Accepted papers only (passed content screening)
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="use_citations" name="use_citations" checked>
+                                        <label class="form-check-label" for="use_citations">
+                                            Query both directions (references + citations) &mdash; fewer isolated nodes, slower
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="augment_openalex" name="augment_openalex">
+                                        <label class="form-check-label" for="augment_openalex">
+                                            Cross-fill from OpenAlex (DOI-matched) &mdash; recovers links Semantic Scholar is missing
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="use_physics" name="use_physics">
+                                        <label class="form-check-label" for="use_physics">
+                                            Enable in-browser physics (slower for large graphs)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-warning py-2" id="apiWarning" style="display:none;">
+                                <i class="fas fa-clock"></i>
+                                Reconstruction queries Semantic Scholar once per paper and can take several
+                                minutes on a large database. Results are cached, so re-running is fast.
+                            </div>
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button type="submit" class="btn btn-dark btn-lg" id="executeBtn" {% if is_running %}disabled{% endif %}>
+                                    <i class="fas fa-play"></i> Generate Graph
+                                </button>
+                                <button type="button" class="btn btn-danger btn-lg" id="cancelBtn" {% if not is_running %}disabled style="display: none;"{% endif %}>
+                                    <i class="fas fa-stop"></i> Cancel
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Progress Section -->
+                        <div id="progressSection" class="mt-4" {% if not is_running %}style="display: none;"{% endif %}>
+                            <h5><i class="fas fa-chart-line"></i> Progress</h5>
+                            <div class="progress mb-2" style="height: 24px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-dark"
+                                     role="progressbar" id="progressBar" style="width: 100%">
+                                    <span id="progressText">Working...</span>
+                                </div>
+                            </div>
+                            <p class="text-muted" id="currentStep">Ready to start...</p>
+                        </div>
+
+                        <!-- Outputs -->
+                        <div id="outputsSection" class="mt-4" {% if not outputs %}style="display: none;"{% endif %}>
+                            <h5><i class="fas fa-file-export"></i> Generated Files</h5>
+                            <div id="outputsList" class="d-flex flex-wrap gap-2">
+                                {% if outputs %}
+                                    {% if outputs.html %}
+                                    <a href="{{ outputs.html }}" target="_blank" class="btn btn-primary">
+                                        <i class="fas fa-eye"></i> View Interactive Graph
+                                    </a>
+                                    {% endif %}
+                                    {% if outputs.graphml %}
+                                    <a href="{{ outputs.graphml }}" download class="btn btn-outline-secondary">
+                                        <i class="fas fa-download"></i> GraphML
+                                    </a>
+                                    {% endif %}
+                                    {% if outputs.gexf %}
+                                    <a href="{{ outputs.gexf }}" download class="btn btn-outline-secondary">
+                                        <i class="fas fa-download"></i> GEXF
+                                    </a>
+                                    {% endif %}
+                                    {% if outputs.json %}
+                                    <a href="{{ outputs.json }}" download class="btn btn-outline-secondary">
+                                        <i class="fas fa-download"></i> JSON
+                                    </a>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Log Output -->
+                        <div class="mt-4">
+                            <h5><i class="fas fa-list"></i> Log Output</h5>
+                            <div class="card bg-dark text-light" style="max-height: 400px; overflow-y: auto;">
+                                <div class="card-body" id="logOutput" style="font-family: monospace; font-size: 0.9rem;">
+                                    {% if logs %}
+                                        {% for log in logs %}
+                                            <div>{{ log }}</div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <div class="text-muted">No logs yet. Generate the graph to see progress.</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const form = document.getElementById('graphForm');
+        const executeBtn = document.getElementById('executeBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const progressSection = document.getElementById('progressSection');
+        const currentStep = document.getElementById('currentStep');
+        const logOutput = document.getElementById('logOutput');
+        const outputsSection = document.getElementById('outputsSection');
+        const outputsList = document.getElementById('outputsList');
+        const edgeSource = document.getElementById('edge_source');
+        const apiWarning = document.getElementById('apiWarning');
+        const edgeSourceHelp = document.getElementById('edgeSourceHelp');
+
+        let statusInterval = null;
+
+        function updateEdgeSourceHelp() {
+            const v = edgeSource.value;
+            if (v === 'db') {
+                edgeSourceHelp.textContent = 'Only edges recorded during snowballing. Empty for databases created before provenance was tracked.';
+                apiWarning.style.display = 'none';
+            } else if (v === 'api') {
+                edgeSourceHelp.textContent = 'Reconstruct the full citation structure by querying Semantic Scholar for every paper.';
+                apiWarning.style.display = 'block';
+            } else {
+                edgeSourceHelp.textContent = 'Union of recorded snowball edges and edges reconstructed from the API.';
+                apiWarning.style.display = 'block';
+            }
+        }
+        edgeSource.addEventListener('change', updateEdgeSourceHelp);
+        updateEdgeSourceHelp();
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderOutputs(outputs) {
+            if (!outputs || Object.keys(outputs).length === 0) {
+                outputsSection.style.display = 'none';
+                return;
+            }
+            let html = '';
+            if (outputs.html) {
+                html += `<a href="${outputs.html}" target="_blank" class="btn btn-primary"><i class="fas fa-eye"></i> View Interactive Graph</a>`;
+            }
+            if (outputs.graphml) {
+                html += `<a href="${outputs.graphml}" download class="btn btn-outline-secondary"><i class="fas fa-download"></i> GraphML</a>`;
+            }
+            if (outputs.gexf) {
+                html += `<a href="${outputs.gexf}" download class="btn btn-outline-secondary"><i class="fas fa-download"></i> GEXF</a>`;
+            }
+            if (outputs.json) {
+                html += `<a href="${outputs.json}" download class="btn btn-outline-secondary"><i class="fas fa-download"></i> JSON</a>`;
+            }
+            outputsList.innerHTML = html;
+            outputsSection.style.display = 'block';
+        }
+
+        function updateStatus() {
+            fetch('/api/workflow/generate_citation_graph/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.logs && data.logs.length > 0) {
+                        logOutput.innerHTML = data.logs.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+                        logOutput.scrollTop = logOutput.scrollHeight;
+                    }
+                    if (data.is_running) {
+                        currentStep.textContent = data.current_step || 'Processing...';
+                    } else {
+                        clearInterval(statusInterval);
+                        executeBtn.disabled = false;
+                        cancelBtn.disabled = true;
+                        cancelBtn.style.display = 'none';
+                        progressSection.style.display = 'none';
+                        renderOutputs(data.outputs);
+                    }
+                })
+                .catch(err => console.error('Error fetching status:', err));
+        }
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = {
+                edge_source: edgeSource.value,
+                accepted_only: document.getElementById('accepted_only').checked,
+                use_citations: document.getElementById('use_citations').checked,
+                augment_openalex: document.getElementById('augment_openalex').checked,
+                use_physics: document.getElementById('use_physics').checked
+            };
+            executeBtn.disabled = true;
+            cancelBtn.disabled = false;
+            cancelBtn.style.display = 'inline-block';
+            progressSection.style.display = 'block';
+            outputsSection.style.display = 'none';
+            logOutput.innerHTML = '<div class="text-muted">Starting...</div>';
+
+            fetch('/api/workflow/generate_citation_graph/execute', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(formData)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    executeBtn.disabled = false;
+                    cancelBtn.disabled = true;
+                    cancelBtn.style.display = 'none';
+                    progressSection.style.display = 'none';
+                } else {
+                    statusInterval = setInterval(updateStatus, 1500);
+                    updateStatus();
+                }
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+                executeBtn.disabled = false;
+                cancelBtn.disabled = true;
+                cancelBtn.style.display = 'none';
+                progressSection.style.display = 'none';
+            });
+        });
+
+        cancelBtn.addEventListener('click', function() {
+            fetch('/api/workflow/generate_citation_graph/cancel', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => { if (data.error) alert('Error: ' + data.error); })
+                .catch(err => alert('Error: ' + err.message));
+        });
+
+        {% if is_running %}
+        statusInterval = setInterval(updateStatus, 1500);
+        updateStatus();
+        {% endif %}
+    </script>
+</body>
+</html>

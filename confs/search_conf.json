@@ -9,9 +9,13 @@
         "D"
     ],
     "proxy_key": "",
-    "initial_file": "confs/seed.txt",
-    "db_path": "databases/test.db",
+    "initial_file": "confs/seed_processed.txt",
+    "db_path": "/home/mementos/PhD/ProfOlaf/databases/merged_content_screening.db",
     "csv_path": "results.csv",
     "search_method": "semantic_scholar",
-    "annotations": []
+    "snowball_direction": "both",
+    "reject_preprints": true,
+    "annotations": [],
+    "rater": "default",
+    "current_iteration": 1
 }
