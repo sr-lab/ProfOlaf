@@ -26,6 +26,11 @@ class TestStageHelpers:
         art = ArticleData(id="1", selected="0", keep_title="")
         assert sc.is_correct_article_stage(art, TITLE) is False
 
+    def test_get_selected_stage_handles_empty(self):
+        """Regression: SelectionStage(int("")) used to raise and crash screening."""
+        assert sc.get_selected_stage(ArticleData(id="1", selected="")) == SelectionStage.NOT_SELECTED
+        assert sc.get_selected_stage(ArticleData(id="1", selected="2")) == SelectionStage.TITLE_APPROVED
+
     def test_is_annotations_to_fill(self):
         assert sc.is_annotations_to_fill(["Scope"], CONTENT) is True
         assert sc.is_annotations_to_fill([], CONTENT) is False

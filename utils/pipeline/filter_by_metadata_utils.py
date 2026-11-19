@@ -4,19 +4,24 @@ import os
 import re
 import sys
 
-from langdetect import detect
+from langdetect import detect_langs, DetectorFactory
+from langdetect.lang_detect_exception import LangDetectException
 from rich import print
 
 from ..db_management import DBManager, SelectionStage
 from ..cli.pretty_print_utils import format_color_string
 
+# Make language detection deterministic (langdetect is randomized by default, so
+# the same title could otherwise be classified differently across runs).
+DetectorFactory.seed = 0
+
 with open("confs/search_conf.json", "r") as f:
     search_conf = json.load(f)
 
+# Patterns are matched against lowercased text, so only lowercase forms are needed.
 PREPRINT_VENUE_PATTERNS = (
     r"\barxiv\b",
     r"\bcorr\b",
-    r"\bcoRR\b",
     r"\bssrn\b",
     r"\bopenreview\b",
     r"\bbiorxiv\b",
@@ -90,55 +95,85 @@ def is_preprint_publication(
         return True, "preprint indicators in BibTeX"
     return False, None
 
-def is_year_valid(pub_year):
+def _coerce_year(pub_year) -> int:
+    """Parse a publication year (stored as TEXT, sometimes "", "0", or an int) to an
+    int, returning 0 when it is missing or unparseable."""
+    try:
+        return int(str(pub_year).strip())
+    except (TypeError, ValueError):
+        return 0
+
+def _resolve_unknown(question: str, interactive: bool, assume_keep: bool) -> bool:
+    """Resolve a check that could not be decided automatically. In interactive mode
+    the user is asked; otherwise the configured assumption (keep/discard) is used so
+    the pipeline can run unattended over large corpora."""
+    if not interactive:
+        return assume_keep
+    while True:
+        user_input = input(f"{question} (y/n): ").strip().lower()
+        if user_input == 'y':
+            return True
+        if user_input == 'n':
+            return False
+        print("Please enter 'y' for yes or 'n' for no.")
+
+def is_year_valid(pub_year, interactive: bool = True, assume_keep: bool = True):
     """
     Check if the publication is between the start and end year.
+    Robust to int/str/empty pub_year values. When the year is unknown (0), the user
+    is asked (or the assumption is used in non-interactive mode).
     """
-    pub_year = int(pub_year) if pub_year.isdigit() else 0   
-    if pub_year != 0 and (pub_year < int(search_conf["start_year"]) or pub_year > int(search_conf["end_year"])):
-        return False
-    if pub_year == 0:
-        while True:
-            user_input = input(f"Is the publication year between {search_conf['start_year']} and {search_conf['end_year']} (y/n): ").strip().lower()
-            if user_input == 'y':
-                return True
-            if user_input == 'n':
-                return False
-            else:
-                print("Please enter 'y' for yes or 'n' for no.")
-    return True
+    year = _coerce_year(pub_year)
+    start_year = int(search_conf["start_year"])
+    end_year = int(search_conf["end_year"])
+    if year != 0:
+        return start_year <= year <= end_year
+    return _resolve_unknown(
+        f"Is the publication year between {search_conf['start_year']} and {search_conf['end_year']}",
+        interactive, assume_keep,
+    )
 
-def is_in_english(title, db_manager):
+def is_english_text(text: str, confidence_threshold: float = 0.90) -> bool:
     """
-    Check if the publication is in English.
+    Best-effort, *conservative* English check.
+
+    Returns True (treat as English / keep) unless the text is confidently detected
+    as a non-English language. Empty, very short, or undetectable text returns True
+    so an article is never discarded merely because langdetect could not decide.
+
+    Detecting language from a title alone is inherently noisy (short, full of proper
+    nouns and acronyms), hence the confidence threshold and the conservative default.
     """
-    if detect(title) == "en":
+    if not text or not text.strip():
         return True
-    else:
-        while True:
-            user_input = input(f"Is the publication in English (y/n): ").strip().lower()
-            if user_input == 'y':
-                return True
-            if user_input == 'n':
-                return False
-            else:
-                print("Please enter 'y' for yes or 'n' for no.")
+    try:
+        candidates = detect_langs(text)
+    except LangDetectException:
+        return True
+    if not candidates:
+        return True
+    top = candidates[0]
+    if top.lang == "en":
+        return True
+    # Confidently another language -> not English; otherwise keep (too unsure).
+    return top.prob < confidence_threshold
 
-def is_downloadable(eprint_url):
+def is_in_english(title, db_manager=None, interactive: bool = True, assume_keep: bool = True):
+    """
+    Check if the publication is in English. Only prompts (or applies the assumption)
+    when the title is confidently detected as non-English.
+    """
+    if is_english_text(title):
+        return True
+    return _resolve_unknown("Is the publication in English", interactive, assume_keep)
+
+def is_downloadable(eprint_url, interactive: bool = True, assume_keep: bool = True):
     """
     Check if the publication is available for download.
     """
     if eprint_url is not None and eprint_url != "":
         return True
-
-    while True:
-        user_input = input(f"Is the publication available for download (y/n): ").strip().lower()
-        if user_input == 'y':
-            return True
-        if user_input == 'n':
-            return False
-        else:
-            print("Please enter 'y' for yes or 'n' for no.")
+    return _resolve_unknown("Is the publication available for download", interactive, assume_keep)
 
 def automated_check_venue_and_peer_reviewed(bibtex, db_manager):
     """
@@ -173,22 +208,18 @@ def automated_check_venue_and_peer_reviewed(bibtex, db_manager):
     
     return None
         
-def is_venue_and_peer_reviewed(bibtex_path, db_manager):
+def is_venue_and_peer_reviewed(bibtex_path, db_manager, interactive: bool = True, assume_keep: bool = True):
     """
-    Check if the publication is peer-reviewed and has a venue. If it is not present in the bibtex string, ask the user.
+    Check if the publication is peer-reviewed and has a venue. If it cannot be
+    determined from the bibtex / venue ranks, ask the user (or apply the assumption).
     """
     result = automated_check_venue_and_peer_reviewed(bibtex_path, db_manager)
     if result is not None:
         return result
-    
-    while True:
-        user_input = input(f"Is the publication peer-reviewed and in one of the following ranks: {search_conf['venue_rank_list']} (y/n): ").strip().lower()
-        if user_input == 'y':
-            return True
-        if user_input == 'n':
-            return False
-        else:
-            print("Please enter 'y' for yes or 'n' for no.")
+    return _resolve_unknown(
+        f"Is the publication peer-reviewed and in one of the following ranks: {search_conf['venue_rank_list']}",
+        interactive, assume_keep,
+    )
 
 def filter_elements(
     db_manager: DBManager,
@@ -198,9 +229,15 @@ def filter_elements(
     disable_english_check,
     disable_download_check,
     reject_preprints: bool = True,
+    interactive: bool = True,
+    assume_keep: bool = True,
 ):
     """
     Filter the elements by metadata.
+
+    When ``interactive`` is False, checks that cannot be decided automatically
+    (unknown year/language/venue/download availability) fall back to ``assume_keep``
+    instead of prompting, so the step can run unattended.
     """
     # If we are filtering by venue, year or download, we need to get all articles that have a bibtex, otherwise we get all articles that are not selected.
     bibtex_not_empty = True if not (disable_venue_check and disable_year_check and disable_download_check) else False
@@ -240,22 +277,22 @@ def filter_elements(
                 updated_data.append((article.id, article.venue_filtered_out, "venue_filtered_out"))
                 continue
 
-        if not disable_venue_check and not is_venue_and_peer_reviewed(article.bibtex, db_manager):
+        if not disable_venue_check and not is_venue_and_peer_reviewed(article.bibtex, db_manager, interactive, assume_keep):
             print(f"This paper was not peer reviewed or it is not in one of the following ranks: {format_color_string(search_conf['venue_rank_list'], 'red', 'bold')}")
             article.venue_filtered_out = True
             updated_data.append((article.id, article.venue_filtered_out, "venue_filtered_out"))
             continue
-        if not disable_year_check and not is_year_valid(article.pub_year):
+        if not disable_year_check and not is_year_valid(article.pub_year, interactive, assume_keep):
             print(f"This paper was not published between {format_color_string(search_conf['start_year'], 'red', 'bold')} and {format_color_string(search_conf['end_year'], 'red', 'bold')}")
             article.year_filtered_out = True
             updated_data.append((article.id, article.year_filtered_out, "year_filtered_out"))
             continue
-        if not disable_english_check and not is_in_english(article.title, db_manager):
+        if not disable_english_check and not is_in_english(article.title, db_manager, interactive, assume_keep):
             print(f"This paper is not in English")
             article.language_filtered_out = True
             updated_data.append((article.id, article.language_filtered_out, "language_filtered_out"))
             continue      
-        if not disable_download_check and not is_downloadable(article.eprint_url):
+        if not disable_download_check and not is_downloadable(article.eprint_url, interactive, assume_keep):
             print(f"This paper is not available for download")
             article.download_filtered_out = True
             updated_data.append((article.id, article.download_filtered_out, "download_filtered_out"))

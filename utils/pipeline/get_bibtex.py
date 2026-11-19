@@ -4,11 +4,14 @@ from typing import List, Tuple
 from scholarly import scholarly
 from ..db_management import DBManager, ArticleData
 from ..article_search.article_search_method import (
-    ArticleSearch, 
-    SearchMethod, 
-    GoogleScholarSearchMethod, 
-    SemanticScholarSearchMethod, 
+    ArticleSearch,
+    SearchMethod,
+    GoogleScholarSearchMethod,
+    SemanticScholarSearchMethod,
     DBLPSearchMethod,
+    OpenAlexSearchMethod,
+    CrossrefSearchMethod,
+    check_valid_venue,
 )
 
 from tqdm import tqdm
@@ -18,18 +21,13 @@ import concurrent.futures
 
 DBLP_URL = "https://dblp.org/search/publ/api?q={query}&format=json"
 
-def check_valid_venue(venue: str):
-    return venue != "" and all(
-        venue.lower() not in invalid_venue 
-        for invalid_venue in ["arxiv", "corr", "no title"]
-    )
-
 def parse_bibtex(bibtex: str):
-    if bibtex != "":
-        library = bibtexparser.loads(bibtex)
-        if not library.entries:
-            return ""
-        return library.entries[0]
+    if not bibtex:
+        return ""
+    library = bibtexparser.loads(bibtex)
+    if not library.entries:
+        return ""
+    return library.entries[0]
 
 def get_bibtex_venue(bibtex: str):
     library_entries = parse_bibtex(bibtex)
@@ -244,6 +242,48 @@ def get_bibtex_single(article: ArticleData, search_method: SearchMethod = Search
         
         return article.id, "NO_BIBTEX"
     
+    elif search_method == SearchMethod.OPENALEX.value:
+        # Try OpenAlex first (BibTeX via DOI content negotiation)
+        try:
+            article_search = ArticleSearch(OpenAlexSearchMethod())
+            bibtex = article_search.get_bibtex(article)
+            if bibtex is not None and bibtex != "":
+                return article.id, bibtex
+        except Exception as e:
+            print(f"OpenAlex failed for {article.title}: {e}", file=sys.stderr)
+
+        # Fall back to Semantic Scholar
+        try:
+            article_search = ArticleSearch(SemanticScholarSearchMethod())
+            bibtex = article_search.get_bibtex(article)
+            if bibtex is not None and bibtex != "":
+                return article.id, bibtex
+        except Exception as e:
+            print(f"Semantic Scholar fallback failed for {article.title}: {e}", file=sys.stderr)
+
+        return article.id, "NO_BIBTEX"
+
+    elif search_method == SearchMethod.CROSSREF.value:
+        # Try Crossref first (BibTeX via DOI content negotiation)
+        try:
+            article_search = ArticleSearch(CrossrefSearchMethod())
+            bibtex = article_search.get_bibtex(article)
+            if bibtex is not None and bibtex != "":
+                return article.id, bibtex
+        except Exception as e:
+            print(f"Crossref failed for {article.title}: {e}", file=sys.stderr)
+
+        # Fall back to Semantic Scholar
+        try:
+            article_search = ArticleSearch(SemanticScholarSearchMethod())
+            bibtex = article_search.get_bibtex(article)
+            if bibtex is not None and bibtex != "":
+                return article.id, bibtex
+        except Exception as e:
+            print(f"Semantic Scholar fallback failed for {article.title}: {e}", file=sys.stderr)
+
+        return article.id, "NO_BIBTEX"
+
     else:  # GOOGLE_SCHOLAR (default)
         # Try Google Scholar first
         try:
@@ -315,14 +355,17 @@ def process_articles_batch(articles: List[ArticleData], max_workers: int = 3, se
     return results
 
 def update_bibtex_info(iteration: int, results: List[Tuple[str, str, str]], db_manager: DBManager):
+    # ``results`` items are (article_id, bibtex, <ignored>). The third element is
+    # not a column name — build the bibtex/venue/year column updates explicitly so
+    # callers that pass "" or "bibtex" there both work.
+    bibtex_updates = []
     venue_updates = []
     year_updates = []
     for article_id, bibtex, _ in results:
-        venue = get_bibtex_venue(bibtex)
-        year = get_bibtex_year(bibtex)
-        venue_updates.append((article_id, venue, "venue"))
-        year_updates.append((article_id, year, "pub_year"))
-    db_manager.update_batch_iteration_data(iteration, results)
+        bibtex_updates.append((article_id, bibtex, "bibtex"))
+        venue_updates.append((article_id, get_bibtex_venue(bibtex), "venue"))
+        year_updates.append((article_id, get_bibtex_year(bibtex), "pub_year"))
+    db_manager.update_batch_iteration_data(iteration, bibtex_updates)
     db_manager.update_batch_iteration_data(iteration, venue_updates)
     db_manager.update_batch_iteration_data(iteration, year_updates)
 

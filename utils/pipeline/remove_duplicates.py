@@ -1,9 +1,11 @@
 import json
+from collections import defaultdict
 from typing import List, Tuple, Dict
 from difflib import SequenceMatcher
 import sys
 
 from ..db_management import DBManager, SelectionStage
+from ..article_search.article_search_method import normalize_doi
 
 with open("confs/search_conf.json", "r") as f:
     search_conf = json.load(f)
@@ -29,31 +31,66 @@ def calculate_title_similarity(title1: str, title2: str) -> float:
     
     return SequenceMatcher(None, norm_title1, norm_title2).ratio()
 
-def find_duplicate_candidates(articles: List, similarity_threshold: float) -> List[Tuple]:
+def find_duplicate_clusters(articles: List, similarity_threshold: float) -> List[List]:
     """
-    Find potential duplicate articles based on title similarity.
-    Returns a list of tuples containing (article1, article2, similarity_score).
+    Group articles into duplicate clusters.
+
+    Two articles are considered the same work when they share a (normalized) DOI
+    — the most reliable signal, catching the same paper published under different
+    titles (e.g. preprint vs. conference version) — or when their titles are at
+    least ``similarity_threshold`` similar. Clustering is transitive (union-find),
+    so three or more near-identical papers collapse into a single cluster in one
+    pass instead of leaving leftovers for a later run.
+
+    Returns a list of clusters (each a list of ArticleData); only clusters with
+    more than one article are returned.
     """
-    duplicates = []
-    processed = set()
-    
-    for i, article1 in enumerate(articles):
-        if article1.id in processed:
+    n = len(articles)
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    # 1) Deterministic DOI matches.
+    doi_first_index: Dict[str, int] = {}
+    for i, article in enumerate(articles):
+        doi = normalize_doi(getattr(article, "doi", "") or "")
+        if not doi:
             continue
-            
-        for j, article2 in enumerate(articles[i+1:], i+1):
-            if article2.id in processed:
+        if doi in doi_first_index:
+            union(i, doi_first_index[doi])
+        else:
+            doi_first_index[doi] = i
+
+    # 2) Title-similarity matches (skip pairs already clustered via DOI).
+    for i in range(n):
+        for j in range(i + 1, n):
+            if find(i) == find(j):
                 continue
-                
-            similarity = calculate_title_similarity(article1.title, article2.title)
-            
-            if similarity >= similarity_threshold:
-                duplicates.append((article1, article2, similarity))
-                processed.add(article1.id)
-                processed.add(article2.id)
-                break  
-    
-    return duplicates
+            if calculate_title_similarity(articles[i].title, articles[j].title) >= similarity_threshold:
+                union(i, j)
+
+    clusters: Dict[int, List] = defaultdict(list)
+    for i in range(n):
+        clusters[find(i)].append(articles[i])
+    return [members for members in clusters.values() if len(members) > 1]
+
+
+def pick_best_article(cluster: List):
+    """Choose which article in a duplicate cluster to keep: most citations, then
+    most recent year."""
+    return max(
+        cluster,
+        key=lambda a: (_to_int(a.num_citations, -1), _to_int(a.pub_year, 0)),
+    )
 
 def display_article_info(article, index: int = None):
     """Display article information in a readable format."""
@@ -67,40 +104,34 @@ def display_article_info(article, index: int = None):
     print("-" * 80)
 
 
-def resolve_duplicate_interactive(article1, article2, similarity: float) -> str:
+def resolve_duplicate_cluster_interactive(cluster: List) -> str:
     """
-    Interactive resolution of duplicate articles.
-    Returns the ID of the article to keep, or 'both' to keep both.
+    Interactive resolution of a duplicate cluster (two or more articles).
+    Returns the ID of the article to keep, 'both' to keep all of them, or 'quit'.
     """
     print(f"\n{'='*80}")
-    print(f"POTENTIAL DUPLICATE DETECTED (Similarity: {similarity:.3f})")
+    print(f"POTENTIAL DUPLICATE CLUSTER DETECTED ({len(cluster)} articles)")
     print(f"{'='*80}")
-    
-    print("\nArticle 1:")
-    display_article_info(article1, 1)
-    
-    print("\nArticle 2:")
-    display_article_info(article2, 2)
-    
+
+    for idx, article in enumerate(cluster, 1):
+        print(f"\nArticle {idx}:")
+        display_article_info(article, idx)
+
     while True:
         print("\nOptions:")
-        print("1 - Keep Article 1 (remove Article 2)")
-        print("2 - Keep Article 2 (remove Article 1)")
-        print("3 - Keep both articles (not duplicates)")
+        print(f"1-{len(cluster)} - Keep that article (remove the others)")
+        print("a - Keep all articles (not duplicates)")
         print("q - Quit without resolving")
-        
-        choice = input("\nEnter your choice (1/2/3/q): ").strip().lower()
-        
-        if choice == '1':
-            return article1.id
-        elif choice == '2':
-            return article2.id
-        elif choice == '3':
+
+        choice = input(f"\nEnter your choice (1-{len(cluster)}/a/q): ").strip().lower()
+
+        if choice == 'a':
             return 'both'
-        elif choice == 'q':
+        if choice == 'q':
             return 'quit'
-        else:
-            print("Invalid choice. Please enter 1, 2, 3, or q.")
+        if choice.isdigit() and 1 <= int(choice) <= len(cluster):
+            return cluster[int(choice) - 1].id
+        print(f"Invalid choice. Please enter 1-{len(cluster)}, a, or q.")
 
 
 def remove_duplicates(db_manager: DBManager, iterations: List[int], 
@@ -117,53 +148,50 @@ def remove_duplicates(db_manager: DBManager, iterations: List[int],
     
     print(f"\nTotal articles to check: {len(total_articles)}")
     
-    print(f"\nSearching for duplicates with similarity threshold: {similarity_threshold}")
-    duplicates = find_duplicate_candidates(total_articles, similarity_threshold)
-    
-    if not duplicates:
+    print(f"\nSearching for duplicates with similarity threshold: {similarity_threshold} (plus exact DOI matches)")
+    clusters = find_duplicate_clusters(total_articles, similarity_threshold)
+
+    if not clusters:
         print("No potential duplicates found!")
         return
-    
-    print(f"Found {len(duplicates)} potential duplicate pairs")
-    
+
+    print(f"Found {len(clusters)} potential duplicate cluster(s)")
+
     articles_to_remove = set()
     articles_to_keep = set()
-    
-    for i, (article1, article2, similarity) in enumerate(duplicates, 1):
-        print(f"\nProcessing duplicate pair {i}/{len(duplicates)}")
-        
+
+    for i, cluster in enumerate(clusters, 1):
+        print(f"\nProcessing duplicate cluster {i}/{len(clusters)} ({len(cluster)} articles)")
+
         if auto_remove:
-            # Keep the more-cited paper; break ties by the more recent year.
-            cit1, cit2 = _to_int(article1.num_citations, -1), _to_int(article2.num_citations, -1)
-            year1, year2 = _to_int(article1.pub_year, 0), _to_int(article2.pub_year, 0)
-            if cit1 > cit2:
-                keep_id, remove_id = article1.id, article2.id
-            elif cit2 > cit1:
-                keep_id, remove_id = article2.id, article1.id
-            elif year1 > year2:
-                keep_id, remove_id = article1.id, article2.id
-            else:
-                keep_id, remove_id = article2.id, article1.id
-            
-            print(f"Auto-removing: Keeping {keep_id}, removing {remove_id}")
-            articles_to_keep.add(keep_id)
-            articles_to_remove.add(remove_id)
+            best = pick_best_article(cluster)
+            print(f"Auto-removing: Keeping {best.id}, removing {len(cluster) - 1} other(s)")
+            for article in cluster:
+                if article.id == best.id:
+                    articles_to_keep.add(article.id)
+                else:
+                    articles_to_remove.add(article.id)
         else:
-            decision = resolve_duplicate_interactive(article1, article2, similarity)
-            
+            decision = resolve_duplicate_cluster_interactive(cluster)
+
             if decision == 'quit':
                 print("Exiting without completing duplicate removal.")
                 return
             elif decision == 'both':
-                articles_to_keep.add(article1.id)
-                articles_to_keep.add(article2.id)
-                print("Both articles will be kept.")
+                for article in cluster:
+                    articles_to_keep.add(article.id)
+                print("All articles in the cluster will be kept.")
             else:
-                other_id = article2.id if decision == article1.id else article1.id
-                articles_to_keep.add(decision)
-                articles_to_remove.add(other_id)
-                print(f"Will keep article {decision}, remove article {other_id}")
-    
+                for article in cluster:
+                    if article.id == decision:
+                        articles_to_keep.add(article.id)
+                    else:
+                        articles_to_remove.add(article.id)
+                print(f"Will keep article {decision}, remove the other {len(cluster) - 1}")
+
+    # An id kept in one cluster must never be removed because of another.
+    articles_to_remove -= articles_to_keep
+
     if articles_to_remove:
         print(f"\nUpdating database: marking {len(articles_to_remove)} articles as duplicates")
         

@@ -26,7 +26,13 @@ from typing import List, Optional, Any
 # -------------------------- Checker Functions --------------------------
 
 def get_selected_stage(article):
-    return SelectionStage(int(article.selected))
+    # article.selected comes back from the DB as a string and can be "" for rows
+    # that were never assigned a stage; treat anything unparseable as NOT_SELECTED
+    # instead of crashing the whole screening session.
+    try:
+        return SelectionStage(int(article.selected))
+    except (TypeError, ValueError):
+        return SelectionStage.NOT_SELECTED
 
 def is_correct_article_stage(article: ArticleData, selection_stage: SelectionStage) -> bool:
     article_kept = article.keep_title if selection_stage == SelectionStage.TITLE_APPROVED else article.keep_content

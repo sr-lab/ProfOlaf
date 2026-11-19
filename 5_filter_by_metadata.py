@@ -37,6 +37,17 @@ def parse_args():
         help='do not auto-reject arXiv, CORR, SSRN, and similar preprints',
         action='store_true',
     )
+    parser.add_argument(
+        '--non-interactive',
+        help='do not prompt for undecidable checks (unknown year/language/venue/download); use --assume instead',
+        action='store_true',
+    )
+    parser.add_argument(
+        '--assume',
+        help='in non-interactive mode, how to resolve undecidable checks',
+        choices=['keep', 'discard'],
+        default='keep',
+    )
     args = parser.parse_args()
     return args
 
@@ -52,6 +63,8 @@ def main():
         args.disable_english_check,
         args.disable_download_check,
         reject_preprints=reject_preprints,
+        interactive=not args.non_interactive,
+        assume_keep=(args.assume == 'keep'),
     )
         
 if __name__ == "__main__":

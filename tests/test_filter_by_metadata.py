@@ -37,6 +37,75 @@ class TestPreprintDetection:
         assert is_pre is False and reason is None
 
 
+class TestYearValidity:
+    # search_conf.json has start_year=2020, end_year=2024
+    def test_in_range(self):
+        assert fm.is_year_valid("2022") is True
+        assert fm.is_year_valid(2022) is True  # robust to int input
+
+    def test_out_of_range(self):
+        assert fm.is_year_valid("2019") is False
+        assert fm.is_year_valid("2026") is False
+
+    def test_boundaries_inclusive(self):
+        assert fm.is_year_valid("2020") is True
+        assert fm.is_year_valid("2024") is True
+
+
+class TestLanguageDetection:
+    def test_english_kept(self):
+        assert fm.is_english_text("A Large Scale Empirical Study of Automated Software Testing") is True
+
+    def test_confident_non_english_rejected(self):
+        # A clearly Portuguese sentence, long enough to detect confidently.
+        pt = "Este artigo apresenta um estudo empírico sobre engenharia de software e testes automatizados em sistemas distribuídos de larga escala"
+        assert fm.is_english_text(pt) is False
+
+    def test_empty_is_conservatively_kept(self):
+        """Never discard just because there's nothing / too little to detect."""
+        assert fm.is_english_text("") is True
+        assert fm.is_english_text("   ") is True
+
+    def test_undetectable_is_kept(self):
+        # Symbols/numbers raise LangDetectException internally -> keep.
+        assert fm.is_english_text("123 :: ### 42") is True
+
+    def test_deterministic(self):
+        title = "Neural Architecture Search for Efficient Transformers"
+        assert fm.is_english_text(title) == fm.is_english_text(title)
+
+
+class TestNonInteractiveMode:
+    def test_unknown_year_assume_keep(self):
+        # year 0 (unknown) normally prompts; non-interactive assume_keep -> True
+        assert fm.is_year_valid("0", interactive=False, assume_keep=True) is True
+
+    def test_unknown_year_assume_discard(self):
+        assert fm.is_year_valid("0", interactive=False, assume_keep=False) is False
+
+    def test_no_download_url_assume_keep(self):
+        assert fm.is_downloadable("", interactive=False, assume_keep=True) is True
+        assert fm.is_downloadable("", interactive=False, assume_keep=False) is False
+
+    def test_filter_elements_non_interactive_discards_unknowns(self, db):
+        # Article with a ranked venue but an UNKNOWN year -> year check is undecidable.
+        db.insert_conf_rank_data([("ICSE", "A*")])
+        db.insert_iteration_data([make_article(
+            "U", iteration=1,
+            title="A Study With An Unknown Publication Year In Its Metadata",
+            venue="International Conference on Software Engineering",
+            bibtex="@inproceedings{k, title={T}, booktitle={ICSE}}",  # no year field
+            pub_year=0, eprint_url="https://doi.org/10.1/x",
+        )])
+        # Non-interactive + assume discard -> the unknown-year article is filtered out,
+        # with no prompt (would hang if it tried to read stdin).
+        fm.filter_elements(db, 1, False, False, False, False,
+                           reject_preprints=True, interactive=False, assume_keep=False)
+        row = db.get_iteration_data(iteration=1, id="U")[0]
+        assert str(row.year_filtered_out) in ("1", "True")
+        assert str(row.selected) == str(SelectionStage.NOT_SELECTED.value)
+
+
 class TestVenueCheck:
     def test_empty_bibtex_returns_false(self, db):
         assert fm.automated_check_venue_and_peer_reviewed("", db) is False

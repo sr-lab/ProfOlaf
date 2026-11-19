@@ -51,8 +51,24 @@ Generates the search configuration used to query the supported scholarly databas
 - Initial seed file path
 - Database path
 - Output CSV path
-- Search method: `google_scholar`, `semantic_scholar`, or `dblp`
+- Search method: `google_scholar`, `semantic_scholar`, `dblp`, `openalex`, or `crossref`
 - Annotations (inclusion criteria)
+
+**Supported search providers**
+
+| Provider | Value | API key | Forward snowballing (citations) | Backward snowballing (references) |
+|----------|-------|---------|:---:|:---:|
+| Semantic Scholar | `semantic_scholar` | optional (`S2_API_KEY`) | ✅ | ✅ |
+| OpenAlex | `openalex` | none | ✅ | ✅ |
+| Crossref | `crossref` | none | — | ✅ |
+| Google Scholar | `google_scholar` | none (uses `scholarly`) | ✅ | — |
+| DBLP | `dblp` | none | — | — |
+
+**OpenAlex** and **Crossref** are free and key-less. Both retrieve BibTeX through DOI
+content negotiation. OpenAlex supports both snowballing directions; Crossref supports
+backward snowballing only (its deposited reference lists) — it has no "who cites this"
+endpoint. For the optional "polite pool" you may set `OPENALEX_MAILTO` / `CROSSREF_MAILTO`
+to a contact email (never set automatically).
 
 ### `0_generate_snowball_start.py`
 
@@ -63,17 +79,17 @@ Initializes the snowballing process using the seed file and stores the initial s
 | `--input_file` | Path to seed file (txt or json) | `search_conf["initial_file"]` |
 | `--delay` | Delay between API requests (seconds) | `1.0` |
 | `--db_path` | Database path | `search_conf["db_path"]` |
-| `--search_method` | `google_scholar`, `semantic_scholar`, or `dblp` | `search_conf["search_method"]` |
+| `--search_method` | `google_scholar`, `semantic_scholar`, `dblp`, `openalex`, or `crossref` | `search_conf["search_method"]` |
 
 ### `1_start_iteration.py`
 
-Starts a new snowballing iteration, collecting forward and backward citations from the set of articles of the previous iteration (or the initial set when starting a new search). Currently, only **Semantic Scholar** provides both backward and forward snowballing; Google Scholar provides citations only. The CLI script also supports repairing broken or unidentified references.
+Starts a new snowballing iteration, collecting forward and backward citations from the set of articles of the previous iteration (or the initial set when starting a new search). **Semantic Scholar** and **OpenAlex** provide both backward and forward snowballing; **Crossref** provides backward (references) only; **Google Scholar** provides forward citations only. See the provider table above. The CLI script also supports repairing broken or unidentified references.
 
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--iteration` | Iteration number | *required* |
 | `--db_path` | Database path | `search_conf["db_path"]` |
-| `--search_method` | `google_scholar`, `semantic_scholar`, or `dblp` | `search_conf["search_method"]` |
+| `--search_method` | `google_scholar`, `semantic_scholar`, `dblp`, `openalex`, or `crossref` | `search_conf["search_method"]` |
 | `--repair` | Repair method for broken references: `remove` or `manual` | *required* |
 | `--verbose` | Verbose output | flag |
 

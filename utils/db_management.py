@@ -40,6 +40,8 @@ class ArticleData:
     iteration: int = 0
     duplicate: bool = False
     search_method: str = ""
+    doi: str = ""
+    abstract: str = ""
     dict = asdict
 
     def set_iteration(self, iteration: int):
@@ -104,6 +106,34 @@ class DBManager:
                 self.create_workflow_metadata_table()
             except:
                 pass  # Table might already exist or there might be other issues
+            try:
+                self._ensure_iterations_columns()
+            except:
+                pass  # Best-effort migration; absent iterations table is fine
+
+    def _ensure_iterations_columns(self):
+        """Add any ArticleData columns missing from an existing ``iterations`` table.
+
+        This lets schema additions (e.g. ``doi``, ``abstract``) apply to databases
+        created before the field existed. New columns are appended by ALTER TABLE;
+        ``get_iteration_data`` maps rows by name, so the append position is irrelevant.
+        Safe to call repeatedly; a no-op if the table does not exist yet.
+        """
+        found = self.cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='iterations'"
+        ).fetchone()
+        if not found:
+            return
+        self.cursor.execute("PRAGMA table_info(iterations)")
+        existing = {row[1] for row in self.cursor.fetchall()}
+        added = False
+        for field in fields(ArticleData):
+            if field.name not in existing:
+                sql_type = self.SQL_TYPES.get(field.type, 'TEXT')
+                self.cursor.execute(f"ALTER TABLE iterations ADD COLUMN {field.name} {sql_type}")
+                added = True
+        if added:
+            self.conn.commit()  # Table might already exist or there might be other issues
 
     # -------------------------- Helper Methods --------------------------
     def _convert_enum_value(self, value):
@@ -150,7 +180,9 @@ class DBManager:
             ).fetchall()
 
             if tables_found != []:
-                # Table exists - check if we need to add annotation columns
+                # Table exists - make sure any new ArticleData columns (e.g. doi,
+                # abstract) are present, then check annotation columns.
+                self._ensure_iterations_columns()
                 if annotations:
                     # Get existing columns
                     self.cursor.execute(f"PRAGMA table_info({table_name})")
@@ -300,15 +332,17 @@ class DBManager:
             else:
                 self.cursor.execute(f"SELECT * FROM {table_name}")
             
+            # Map rows to ArticleData *by column name* (not position), so the mapping
+            # is robust to extra columns (annotations) and to schema additions such as
+            # doi/abstract appended by ALTER TABLE on pre-existing databases.
+            columns = [desc[0] for desc in self.cursor.description]
+            field_names = {f.name for f in fields(ArticleData)}
             rows = self.cursor.fetchall()
             dict_list = []
             for row in rows:
-                row_dict = {}
-                for i, field in enumerate(fields(ArticleData)):
-                    if i < len(row):
-                        row_dict[field.name] = row[i]
-                dict_list.append(ArticleData(**row_dict))
-            
+                row_map = dict(zip(columns, row))
+                article_kwargs = {name: row_map[name] for name in field_names if name in row_map}
+                dict_list.append(ArticleData(**article_kwargs))
             return dict_list
         except Exception as e:
             print("Error getting iteration data: ", e)
@@ -349,8 +383,25 @@ class DBManager:
             self.conn.rollback()
             raise ValueError(f"Failed to update iteration data: {e}")
 
+    @staticmethod
+    def _interpret_keep(val) -> bool | None:
+        """Map a stored keep_* cell to a tri-state decision:
+        None  -> undecided (NULL / "" : the article was never screened at this stage)
+        True  -> kept, False -> rejected.
+        This deliberately distinguishes "undecided" from "rejected" (both of which
+        used to collapse to False), so callers can tell a pending article from a
+        rejected one."""
+        if val is None or val == '':
+            return None
+        if val in (1, True, '1', 1.0, 'True', 'true'):
+            return True
+        if val in (0, False, '0', 0.0, 'False', 'false'):
+            return False
+        return bool(val)
+
     def get_keep_title(self, article_id: str, iteration: int) -> bool | None:
-        """Read keep_title from iterations table by explicit column name (avoids column-order issues). Returns True/False or None if missing."""
+        """Read keep_title from iterations table by explicit column name (avoids column-order issues).
+        Returns True (kept), False (rejected), or None (undecided / no row)."""
         try:
             self.cursor.execute(
                 "SELECT keep_title FROM iterations WHERE id = ? AND iteration = ?",
@@ -359,17 +410,13 @@ class DBManager:
             row = self.cursor.fetchone()
             if row is None:
                 return None
-            val = row[0]
-            if val in (1, True, '1', 1.0, 'True', 'true'):
-                return True
-            if val in (0, False, '0', 0.0, None, '', 'False', 'false'):
-                return False
-            return bool(val)
+            return self._interpret_keep(row[0])
         except Exception:
             return None
 
     def get_keep_content(self, article_id: str, iteration: int) -> bool | None:
-        """Read keep_content from iterations table by explicit column name. Returns True/False or None if missing."""
+        """Read keep_content from iterations table by explicit column name.
+        Returns True (kept), False (rejected), or None (undecided / no row)."""
         try:
             self.cursor.execute(
                 "SELECT keep_content FROM iterations WHERE id = ? AND iteration = ?",
@@ -378,12 +425,7 @@ class DBManager:
             row = self.cursor.fetchone()
             if row is None:
                 return None
-            val = row[0]
-            if val in (1, True, '1', 1.0, 'True', 'true'):
-                return True
-            if val in (0, False, '0', 0.0, None, '', 'False', 'false'):
-                return False
-            return bool(val)
+            return self._interpret_keep(row[0])
         except Exception:
             return None
 

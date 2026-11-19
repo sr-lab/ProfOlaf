@@ -70,13 +70,13 @@ class TestSettleAgreements:
         self._title_vote(db, "W", "alice", True)
         self._title_vote(db, "W", "bob", False)
         sd.settle_agreements(1, db, TITLE, raters=["alice", "bob"])
-        # Still unsettled; iterations stage untouched (stays at METADATA_APPROVED).
-        # Note: get_keep_title can't distinguish "undecided" from "reject" (both map
-        # to False), so we assert on the screening settled-state and the stage instead.
+        # Still unsettled: screening not settled, iterations stage untouched, and the
+        # iterations keep_title stays undecided (None) rather than a forced reject.
         unsettled = db.get_screening_data(1, title_settled=False, content_settled=False)
         assert "W" in {r["id"] for r in unsettled}
         row = db.get_iteration_data(iteration=1, id="W")[0]
         assert str(row.selected) == str(SelectionStage.METADATA_APPROVED.value)
+        assert db.get_keep_title("W", 1) is None
 
 
 class TestSingleRaterFastPath:

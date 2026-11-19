@@ -21,7 +21,7 @@ from ..article_processing.shared_utils import (
 from ..article_processing.download_pdfs import download_pdf, is_valid_pdf
 
 PROMPTS_FOLDER = "prompts"
-SYSTEM_PROMPT_FILE = os.path.join(PROMPTS_FOLDER, "system_content_screening.txt")
+SYSTEM_CONTENT_PROMPT_FILE = os.path.join(PROMPTS_FOLDER, "system_content_screening.txt")
 USER_CONTENT_PROMPT_FILE = os.path.join(PROMPTS_FOLDER, "user_content_screening.txt")
 SYSTEM_TITLE_PROMPT_FILE = os.path.join(PROMPTS_FOLDER, "system_title_screening.txt")
 USER_TITLE_PROMPT_FILE = os.path.join(PROMPTS_FOLDER, "user_title_screening.txt")
@@ -132,7 +132,7 @@ def ask_model(
             text_format=ScreeningResult,
         )
     except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response_text}")
+        raise ValueError(f"Failed to parse JSON response: {e}")
     except Exception as e:
         raise RuntimeError(f"Error calling OpenAI API: {e}")
 

@@ -60,6 +60,20 @@ class TestIterations:
         assert db.get_keep_title("1", 1) is False
         assert db.get_keep_content("1", 1) is True
 
+    def test_get_keep_tri_state_undecided_vs_reject(self, db):
+        """get_keep_* distinguishes undecided (None) from an explicit reject (False)."""
+        db.insert_iteration_data([make_article(1, iteration=1)])
+        # Freshly inserted, never screened -> undecided, NOT reject
+        assert db.get_keep_title("1", 1) is None
+        assert db.get_keep_content("1", 1) is None
+        # No such row at all -> None
+        assert db.get_keep_title("nope", 1) is None
+        # Explicit decisions
+        db.update_iteration_data(1, "1", keep_title=False)
+        assert db.get_keep_title("1", 1) is False
+        db.update_iteration_data(1, "1", keep_title=True)
+        assert db.get_keep_title("1", 1) is True
+
     def test_query_operators(self, db):
         db.insert_iteration_data([
             make_article(1, iteration=1, bibtex="@x{...}"),
