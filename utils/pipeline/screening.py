@@ -157,6 +157,27 @@ def _previous_data_from_row(row: dict, selection_stage: SelectionStage, annotati
     return out
 
 
+def build_article_info(article: ArticleData, selection_stage: SelectionStage, previous_data: Optional[dict] = None) -> str:
+    """Build the information block shown to the rater for an article. During content
+    screening it also includes the URL and the stored abstract (when available) so
+    the rater has the article's content without opening the PDF."""
+    title_string = format_color_string(article.title, "magenta", "bold")
+    info = ""
+    if previous_data:
+        prev_keep = "Keep" if previous_data.get("keep") else "Reject"
+        prev_reason = (previous_data.get("reason") or "").strip() or "(none)"
+        color = "green" if previous_data.get("keep") else "red"
+        info += format_color_string(f"\nCurrent Decision: {prev_keep} Reason: {prev_reason}\n", color, "")
+    info += f"Title: {title_string}\n"
+    info += f"ID: {article.id}\n"
+    if selection_stage == SelectionStage.CONTENT_APPROVED:
+        info += f"Url: {article.pub_url}\n"
+        abstract = (getattr(article, "abstract", "") or "").strip()
+        if abstract:
+            info += f"Abstract: {abstract}\n"
+    return info
+
+
 def process_article(
     article: ArticleData,
     previously_screened: bool,
@@ -177,15 +198,7 @@ def process_article(
         pretty_print(f"Skipping Article {title_string}")
         return None, None
 
-    article_info_string = ""
-    if previous_data:
-        prev_keep = "Keep" if previous_data.get("keep") else "Reject"
-        prev_reason = (previous_data.get("reason") or "").strip() or "(none)"
-        color = "green" if previous_data.get("keep") else "red"
-        article_info_string += format_color_string(f"\nCurrent Decision: {prev_keep} Reason: {prev_reason}\n", color, "")
-    article_info_string += f"Title: {title_string}\n"
-    article_info_string += f"ID: {article.id}\n"
-    article_info_string += f"Url: {article.pub_url}\n" if selection_stage == SelectionStage.CONTENT_APPROVED else ""
+    article_info_string = build_article_info(article, selection_stage, previous_data)
 
     # Default keep/reason from previous screening (so they show as pre-filled and Enter keeps them)
     default_keep = None

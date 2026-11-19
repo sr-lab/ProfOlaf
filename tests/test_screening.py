@@ -37,6 +37,24 @@ class TestStageHelpers:
         assert sc.is_annotations_to_fill(["Scope"], TITLE) is False
 
 
+class TestBuildArticleInfo:
+    def test_content_stage_shows_abstract(self):
+        art = ArticleData(id="1", title="A Paper", pub_url="http://x", abstract="The abstract text.")
+        info = sc.build_article_info(art, CONTENT)
+        assert "Abstract: The abstract text." in info
+        assert "Url: http://x" in info
+
+    def test_title_stage_omits_abstract_and_url(self):
+        art = ArticleData(id="1", title="A Paper", pub_url="http://x", abstract="The abstract text.")
+        info = sc.build_article_info(art, TITLE)
+        assert "Abstract" not in info
+        assert "Url" not in info
+
+    def test_no_abstract_no_abstract_line(self):
+        art = ArticleData(id="1", title="A Paper", pub_url="http://x", abstract="")
+        assert "Abstract" not in sc.build_article_info(art, CONTENT)
+
+
 class TestPreviousData:
     def test_previous_data_from_row_title(self):
         row = {"keep_title": 1, "reason_title": "relevant", "keep_content": None}

@@ -31,6 +31,24 @@ class BaseScreeningResult(BaseModel):
     keep: bool = Field(description="Whether to keep the paper")
     reason: str = Field(description="The reason for the decision")
 
+
+def extract_content_for_article(article, article_folder: Optional[str]) -> str:
+    """Return the text used for content-stage screening of ``article``.
+
+    Prefers the full text extracted from the downloaded PDF (``<article_folder>/<id>.pdf``),
+    and falls back to the article's stored ``abstract`` when the PDF is missing,
+    unreadable, or empty. This lets content screening run even without PDFs.
+    """
+    pdf_path = os.path.join(article_folder, f"{article.id}.pdf") if article_folder else None
+    if pdf_path and os.path.exists(pdf_path):
+        try:
+            text = PDFProcessor.extract_text_from_pdf(pdf_path)
+            if text and text.strip():
+                return text
+        except Exception:
+            pass
+    return getattr(article, "abstract", "") or ""
+
 def get_articles_from_db(db_path: str, iteration: int, stage="title"):
     db_manager = DBManager(db_path)
 
@@ -167,7 +185,7 @@ def screen_papers(
         keep_key = "keep_title"
         reason_key = "title_reason"
         if stage == "content":
-            content = PDFProcessor.extract_text_from_pdf(os.path.join(article_folder, f"{article.id}.pdf"))
+            content = extract_content_for_article(article, article_folder)
             keep_key = "keep_content"
             reason_key = "content_reason"
         if system_prompt_file is None:

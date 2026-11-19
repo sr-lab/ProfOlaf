@@ -8,6 +8,29 @@ from utils.db_management import SelectionStage
 from utils.pipeline import llm_screening as ls
 
 
+class TestExtractContentForArticle:
+    def test_falls_back_to_abstract_without_pdf(self):
+        art = make_article("A", abstract="This is the stored abstract.")
+        assert ls.extract_content_for_article(art, None) == "This is the stored abstract."
+
+    def test_falls_back_to_abstract_when_pdf_missing(self, tmp_path):
+        art = make_article("A", abstract="Stored abstract.")
+        # tmp_path has no A.pdf -> abstract used
+        assert ls.extract_content_for_article(art, str(tmp_path)) == "Stored abstract."
+
+    def test_prefers_pdf_text_when_available(self, tmp_path, monkeypatch):
+        (tmp_path / "A.pdf").write_bytes(b"%PDF-1.4 fake")
+        art = make_article("A", abstract="Abstract (should be ignored).")
+        monkeypatch.setattr(ls.PDFProcessor, "extract_text_from_pdf", staticmethod(lambda p: "Full PDF body text."))
+        assert ls.extract_content_for_article(art, str(tmp_path)) == "Full PDF body text."
+
+    def test_falls_back_when_pdf_text_empty(self, tmp_path, monkeypatch):
+        (tmp_path / "A.pdf").write_bytes(b"%PDF-1.4 fake")
+        art = make_article("A", abstract="Abstract wins.")
+        monkeypatch.setattr(ls.PDFProcessor, "extract_text_from_pdf", staticmethod(lambda p: "   "))
+        assert ls.extract_content_for_article(art, str(tmp_path)) == "Abstract wins."
+
+
 class TestScreeningResultModel:
     def test_base_fields(self):
         m = ls.BaseScreeningResult(title="T", keep=True, reason="r")
@@ -92,3 +115,29 @@ class TestScreenPapersWithFakeLLM:
         rows = db.get_screening_rows_by_rater("llm", 1)
         assert len(rows) == 1 and rows[0]["keep_title"] in (1, True)
         assert rows[0]["reason_title"] == "clearly relevant"
+
+    def test_content_screening_uses_abstract_without_pdf(self, db, tmp_path, monkeypatch):
+        db.insert_iteration_data([make_article(
+            "A", iteration=1, title="Paper A",
+            abstract="A thorough empirical abstract about program repair.",
+            selected=SelectionStage.TITLE_APPROVED,  # eligible for content stage
+        )])
+        sys_prompt = tmp_path / "sys.txt"; sys_prompt.write_text("You are a screener.")
+        user_prompt = tmp_path / "user.txt"; user_prompt.write_text("Title: {title}\nContent: {content}")
+
+        captured = {}
+
+        def fake_ask_model(system_prompt, user_prompt, model, api_key, temperature, annotations=None):
+            captured["user"] = user_prompt
+            return {"title": "Paper A", "keep": True, "reason": "on topic"}
+
+        monkeypatch.setattr(ls, "ask_model", fake_ask_model)
+        # No article_folder / no PDF -> content must come from the stored abstract.
+        ls.screen_papers(
+            rater_id="llm", topic="program repair", db_path=db.db_path, iteration=1,
+            stage="content", api_key="dummy",
+            system_prompt_file=str(sys_prompt), user_prompt_file=str(user_prompt),
+        )
+        assert "empirical abstract about program repair" in captured["user"]
+        rows = db.get_screening_rows_by_rater("llm", 1)
+        assert rows and rows[0]["keep_content"] in (1, True)
