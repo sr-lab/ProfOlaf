@@ -208,12 +208,59 @@ class TestAuxTables:
         db.insert_conf_rank_data([("ICSE", "A*")])
         assert db.get_venue_rank_data("ICSE")[0] == "A*"
 
-    def test_snowball_edges_roundtrip_and_dedup(self, db):
-        db.insert_snowball_edges([("p", "c", "citation", 1)])
-        db.insert_snowball_edges([("p", "c", "citation", 1)])  # duplicate ignored
-        edges = db.get_snowball_edges(iteration=1)
+    def test_citation_edges_roundtrip_and_dedup(self, db):
+        db.insert_citation_edges([("A", "B", "10.1/a", "10.1/b", "openalex", 1)])
+        db.insert_citation_edges([("A", "B", "10.1/a", "10.1/b", "openalex", 1)])  # dup ignored
+        edges = db.get_citation_edges(iteration=1)
         assert len(edges) == 1
-        assert edges[0]["direction"] == "citation"
+        e = edges[0]
+        assert (e["citing_id"], e["cited_id"]) == ("A", "B")
+        assert e["citing_doi"] == "10.1/a" and e["source"] == "openalex"
+
+    def test_citation_edges_skip_bad_endpoints(self, db):
+        db.insert_citation_edges([
+            ("A", "", "", "", "", 1),    # missing cited
+            ("", "B", "", "", "", 1),    # missing citing
+            ("C", "C", "", "", "", 1),   # self-loop
+            ("A", "B", "", "", "", 1),   # valid
+        ])
+        assert {(e["citing_id"], e["cited_id"]) for e in db.get_citation_edges()} == {("A", "B")}
+
+    def test_citation_edges_upsert_fills_missing_doi(self, db):
+        db.insert_citation_edges([("A", "B", "", "", "snowball", 1)])     # no DOIs yet
+        db.insert_citation_edges([("A", "B", "10.1/a", "10.1/b", "openalex", 1)])  # enrich
+        e = db.get_citation_edges()[0]
+        assert e["citing_doi"] == "10.1/a" and e["cited_doi"] == "10.1/b"
+
+    def test_insert_snowball_edges_shim_is_canonical(self, db):
+        # Legacy shim: 'citation' means child cites parent -> edge child->parent.
+        db.insert_snowball_edges([("P", "C", "citation", 1)])
+        db.insert_snowball_edges([("P", "R", "reference", 1)])  # parent cites R -> P->R
+        edges = {(e["citing_id"], e["cited_id"]) for e in db.get_citation_edges()}
+        assert edges == {("C", "P"), ("P", "R")}
+
+    def test_build_citation_edge_orientation(self):
+        from utils.db_management import build_citation_edge
+        seed = make_article("S", doi="10.1/s")
+        disc = make_article("D", doi="10.1/d", search_method="crossref")
+        # citation: disc cites seed -> D -> S
+        cit = build_citation_edge(seed, disc, "citation", 2)
+        assert cit[:2] == ("D", "S") and cit[2] == "10.1/d" and cit[4] == "crossref"
+        # reference: seed cites disc -> S -> D
+        ref = build_citation_edge(seed, disc, "reference", 2)
+        assert ref[:2] == ("S", "D")
+
+    def test_legacy_snowball_edges_folded_in(self, db):
+        # Simulate a pre-existing legacy snowball_edges table with a row.
+        db.create_snowball_edges_table()
+        db.cursor.execute(
+            "INSERT INTO snowball_edges (parent_id, child_id, direction, iteration) VALUES (?,?,?,?)",
+            ("P", "C", "citation", 1),
+        )
+        db.conn.commit()
+        # get_citation_edges converts it (citation -> child cites parent -> C->P).
+        edges = {(e["citing_id"], e["cited_id"]) for e in db.get_citation_edges()}
+        assert ("C", "P") in edges
 
     def test_workflow_metadata(self, db):
         db.update_current_iteration(3)

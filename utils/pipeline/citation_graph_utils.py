@@ -8,9 +8,10 @@ equivalently "B is a reference of A").
 
 Edges come from two sources (selectable via ``edge_source``):
 
-* ``db``  - the ``snowball_edges`` provenance table, populated during
-  snowballing. These carry the real snowball ``direction`` ("citation" or
-  "reference") relative to the seed that was expanded.
+* ``db``  - the ``citation_edges`` table, populated during snowballing. Each
+  row is stored canonically as ``citing_id -> cited_id`` (with endpoint DOIs and
+  the source provider), so no direction reinterpretation is needed here. Legacy
+  ``snowball_edges`` rows, if any, are converted and folded in automatically.
 * ``api`` - reconstructed by re-querying the Semantic Scholar ``/references``
   endpoint for every node and keeping only edges whose endpoints are both in
   the corpus. This recovers the full citation structure even for databases
@@ -25,7 +26,7 @@ import json
 import os
 import re
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -160,6 +161,45 @@ def _fetch_citation_ids(paper_id: str) -> List[str]:
             break
         offset += limit
     return cit_ids
+
+
+def _fetch_edge_endpoints(paper_id: str, direction: str = "references") -> List[Tuple[str, str]]:
+    """Return ``[(other_paper_id, normalized_doi), ...]`` for ``paper_id``'s
+    references (``direction='references'``) or citations (``'citations'``).
+
+    Like :func:`_fetch_reference_ids`/:func:`_fetch_citation_ids` but also pulls
+    each endpoint's DOI (via ``externalIds``) so reconstructed edges can be
+    attached to a corpus node by DOI even when the endpoint's Semantic Scholar id
+    is not itself in the corpus (e.g. a dropped duplicate twin)."""
+    key = "citedPaper" if direction == "references" else "citingPaper"
+    out: List[Tuple[str, str]] = []
+    offset = 0
+    limit = 1000
+    while True:
+        url = (
+            f"{SS_API_BASE}/paper/{paper_id}/{direction}"
+            f"?fields=paperId,externalIds&offset={offset}&limit={limit}"
+        )
+        try:
+            response = _semantic_scholar_get(url)
+        except Exception:
+            break
+        if response.status_code != 200:
+            break
+        batch = response.json().get("data", [])
+        if not batch:
+            break
+        for item in batch:
+            p = item.get(key) or {}
+            pid = p.get("paperId")
+            if not pid:
+                continue
+            doi = _normalize_doi((p.get("externalIds") or {}).get("DOI")) or ""
+            out.append((pid, doi))
+        if len(batch) < limit:
+            break
+        offset += limit
+    return out
 
 
 def fetch_reference_details(paper_id: str, direction: str = "references",
@@ -759,36 +799,60 @@ def build_citation_graph(
     def canon(pid: str) -> str:
         return alias_to_rep.get(pid, pid)
 
-    # --- Edges from the provenance table -----------------------------------
+    # DOI -> retained node id. In accepted-only builds (and after a duplicate merge)
+    # an edge may point at the id of a dropped twin; if that twin shares a DOI with a
+    # retained node, we can still attach the edge to the node instead of losing it.
+    doi_to_node: Dict[str, str] = {}
+    for article in articles:
+        if article.id in node_ids:
+            nd = _normalize_doi(getattr(article, "doi", "") or "")
+            if nd:
+                doi_to_node.setdefault(nd, article.id)
+
+    def resolve_endpoint(pid: str, doi: str) -> str:
+        """Resolve a citation-edge endpoint to a retained node: apply the duplicate
+        alias map, and if the id still is not a node, fall back to matching the
+        edge's recorded DOI to a node (so edges survive duplicate merges)."""
+        cp = canon(pid)
+        if cp in node_ids:
+            return cp
+        nd = _normalize_doi(doi)
+        if nd and nd in doi_to_node:
+            return doi_to_node[nd]
+        return cp
+
+    # --- Edges from the citation-edge table --------------------------------
     db_edges_added = 0
     if edge_source in ("db", "both"):
-        edges = db_manager.get_snowball_edges()
+        # Edges are stored canonically as citing -> cited, so no direction
+        # reinterpretation is needed here.
+        edges = db_manager.get_citation_edges()
+        doi_resolved = 0
         for edge in edges:
-            parent = canon(edge["parent_id"])
-            child = canon(edge["child_id"])
-            direction = edge["direction"]
-            if parent not in node_ids or child not in node_ids or parent == child:
+            raw_src, raw_dst = canon(edge["citing_id"]), canon(edge["cited_id"])
+            src = resolve_endpoint(edge["citing_id"], edge.get("citing_doi", ""))
+            dst = resolve_endpoint(edge["cited_id"], edge.get("cited_doi", ""))
+            if src not in node_ids or dst not in node_ids or src == dst:
                 continue
-            # Normalise to "citing -> cited" orientation.
-            if direction == "citation":
-                # child cites parent
-                src, dst = child, parent
-            else:  # "reference": parent cites child
-                src, dst = parent, child
+            if src != raw_src or dst != raw_dst:
+                doi_resolved += 1
             if graph.has_edge(src, dst):
                 graph.edges[src, dst]["provenance"] = "db"
             else:
                 graph.add_edge(
                     src, dst,
                     provenance="db",
-                    snowball_direction=direction,
-                    color=(EDGE_COLOR_CITATION if direction == "citation" else EDGE_COLOR_REFERENCE),
+                    source=edge.get("source", ""),
+                    color=EDGE_COLOR_CITATION,
                 )
                 db_edges_added += 1
-        _log(f"Added {db_edges_added} edges from the provenance table.")
+        _log(
+            f"Added {db_edges_added} edges from the citation-edge table"
+            + (f" ({doi_resolved} attached to a node by DOI across duplicates)." if doi_resolved else ".")
+        )
         if edge_source == "db" and db_edges_added == 0:
             _log(
-                "No provenance edges found. This database predates edge "
+                "No recorded edges found. This database predates edge "
                 "recording; use edge_source='api' or 'both' to reconstruct them."
             )
 
@@ -828,6 +892,12 @@ def build_citation_graph(
                            color=_direction_color(direction))
             return 1
 
+        # DOI for every endpoint id Semantic Scholar reports, so edges to a dropped
+        # twin's id can be re-attached to the node sharing that DOI (same treatment
+        # as the db-edge path). Accumulated across all papers.
+        fetched_doi: Dict[str, str] = {}
+        api_doi_resolved = 0
+
         directions = "references and citations" if use_citations else "references"
         _log(f"Reconstructing edges from Semantic Scholar ({directions}) for "
              f"{total} papers ({len(cache)} already cached)...")
@@ -844,31 +914,49 @@ def build_citation_graph(
                 entry = _cache_entry(cache, qid)
                 changed = False
                 if "references" not in entry:
-                    entry["references"] = _fetch_reference_ids(qid)
+                    pairs = _fetch_edge_endpoints(qid, "references")
+                    entry["references"] = [pid for pid, _ in pairs]
+                    entry["ref_dois"] = {pid: d for pid, d in pairs if d}
                     changed = True
                 if use_citations and "citations" not in entry:
-                    entry["citations"] = _fetch_citation_ids(qid)
+                    pairs = _fetch_edge_endpoints(qid, "citations")
+                    entry["citations"] = [pid for pid, _ in pairs]
+                    entry["cit_dois"] = {pid: d for pid, d in pairs if d}
                     changed = True
                 if changed:
                     cache[qid] = entry
                 refs.update(entry.get("references", []))
                 cits.update(entry.get("citations", []) or [])
+                endpoint_dois = {**entry.get("ref_dois", {}), **entry.get("cit_dois", {})}
+                fetched_doi.update(endpoint_dois)
+                # Opportunistically enrich DOI->node from endpoints that are nodes.
+                for pid, d in endpoint_dois.items():
+                    cp = canon(pid)
+                    if d and cp in node_ids:
+                        doi_to_node.setdefault(d, cp)
             if processed % 25 == 0:
                 _save_reference_cache(api_cache_path, cache)
                 _log(f"  ...{processed}/{total} papers queried")
 
-            # paper_id cites each of its references (twin ids mapped to their rep).
+            # paper_id cites each of its references (resolve twin ids by alias/DOI).
             for ref_id in refs:
-                dst = canon(ref_id)
+                dst = resolve_endpoint(ref_id, fetched_doi.get(ref_id, ""))
                 if dst in node_ids and dst != paper_id:
+                    if dst != canon(ref_id):
+                        api_doi_resolved += 1
                     api_edges_added += _add_api_edge(paper_id, dst)
             # Each citing paper cites paper_id.
             for cit_id in cits:
-                src = canon(cit_id)
+                src = resolve_endpoint(cit_id, fetched_doi.get(cit_id, ""))
                 if src in node_ids and src != paper_id:
+                    if src != canon(cit_id):
+                        api_doi_resolved += 1
                     api_edges_added += _add_api_edge(src, paper_id)
         _save_reference_cache(api_cache_path, cache)
-        _log(f"Added {api_edges_added} edges reconstructed from the API.")
+        _log(
+            f"Added {api_edges_added} edges reconstructed from the API"
+            + (f" ({api_doi_resolved} attached to a node by DOI across duplicates)." if api_doi_resolved else ".")
+        )
 
         # --- Augment with OpenAlex (DOI-matched) ---------------------------
         if augment_openalex and not (cancel_flag is not None and cancel_flag.is_set()):

@@ -1,7 +1,7 @@
 from tqdm import tqdm
 import sys
 
-from ..db_management import DBManager
+from ..db_management import DBManager, build_citation_edge
 from ..article_search.article_search_method import ArticleSearch, SemanticScholarSearchMethod, GoogleScholarSearchMethod, DBLPSearchMethod
 
 SNOWBALL_DIRECTIONS = ("forward", "backward", "both")
@@ -44,15 +44,16 @@ def get_articles(iteration: int, initial_pubs, db_manager: DBManager, article_se
 
         sys.stdout.flush()
 
-        # Record provenance edges for every discovered article, including
-        # duplicates that are not re-inserted as nodes, so the citation/
-        # reference graph keeps all parent -> child links.
+        # Record canonical citation edges (citing -> cited) for every discovered
+        # article, including duplicates that are not re-inserted as nodes, so the
+        # citation graph keeps all links. build_citation_edge orients each result
+        # and carries the endpoint DOIs + source provider.
         edges = [
-            (initial_pub.id, article.id, direction, iteration)
+            build_citation_edge(initial_pub, article, direction, iteration)
             for article, direction in results
             if initial_pub.id and article.id
         ]
-        db_manager.insert_snowball_edges(edges)
+        db_manager.insert_citation_edges(edges)
 
         filtered_articles = [
             article for article, _direction in results

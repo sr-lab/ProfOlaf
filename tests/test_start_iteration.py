@@ -35,29 +35,36 @@ class FakeSearch:
 
 
 class TestGetArticles:
-    def test_records_all_edges_but_dedups_nodes(self, db):
-        parent = make_article("P", title="Parent Paper", iteration=0)
-        new_x = make_article("X", title="Brand New Paper", iteration=1)
-        seen_y = make_article("Y", title="Already Seen Paper", iteration=1)
+    def test_records_canonical_edges_but_dedups_nodes(self, db):
+        parent = make_article("P", title="Parent Paper", iteration=0, doi="10.1/parent")
+        new_x = make_article("X", title="Brand New Paper", iteration=1, doi="10.1/x",
+                             search_method="openalex")
+        seen_y = make_article("Y", title="Already Seen Paper", iteration=1,
+                              search_method="openalex")
         # Y's title is already known -> it should be filtered out as a node...
         db.insert_seen_titles_data([("already seen paper", "Y")])
 
+        # X cites P (citation) -> edge X->P ; P cites Y (reference) -> edge P->Y
         search = FakeSearch({"P": [(new_x, "citation"), (seen_y, "reference")]})
         si.get_articles(1, [parent], db, search, snowball_direction="both")
 
-        # ...but BOTH provenance edges are recorded (graph keeps all parent->child links).
-        edges = {(e["parent_id"], e["child_id"], e["direction"]) for e in db.get_snowball_edges(iteration=1)}
-        assert edges == {("P", "X", "citation"), ("P", "Y", "reference")}
+        # BOTH edges recorded, oriented citing -> cited (no direction field needed).
+        edges = {(e["citing_id"], e["cited_id"]) for e in db.get_citation_edges(iteration=1)}
+        assert edges == {("X", "P"), ("P", "Y")}
+
+        # Endpoint DOIs and source are carried through.
+        by_pair = {(e["citing_id"], e["cited_id"]): e for e in db.get_citation_edges()}
+        assert by_pair[("X", "P")]["citing_doi"] == "10.1/x"
+        assert by_pair[("X", "P")]["cited_doi"] == "10.1/parent"
+        assert by_pair[("X", "P")]["source"] == "openalex"
 
         # Only the genuinely new article is inserted as an iteration node.
         node_ids = {a.id for a in db.get_iteration_data(iteration=1)}
         assert node_ids == {"X"}
-
-        # The new article's title is now marked as seen.
         assert db.get_seen_title("Brand New Paper") is not None
 
     def test_no_results_is_noop(self, db):
         parent = make_article("P", title="Parent", iteration=0)
         si.get_articles(1, [parent], db, FakeSearch({}), snowball_direction="both")
         assert db.get_iteration_data(iteration=1) == []
-        assert db.get_snowball_edges(iteration=1) == []
+        assert db.get_citation_edges(iteration=1) == []

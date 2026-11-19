@@ -12,7 +12,7 @@ import sqlite3
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file
 from pathlib import Path
 from collections import defaultdict
-from utils.db_management import DBManager, SelectionStage, initialize_db
+from utils.db_management import DBManager, SelectionStage, initialize_db, build_citation_edge
 from utils.article_search.article_search_method import (
     SearchMethod, ArticleSearch, SemanticScholarSearchMethod, GoogleScholarSearchMethod, DBLPSearchMethod,
     _get_semantic_scholar_api_key,
@@ -1413,15 +1413,16 @@ def execute_start_iteration():
 
                     log(f"  Found {len(results)} articles")
 
-                    # Record provenance edges for every discovered article
-                    # (including duplicates not re-inserted as nodes) so the
-                    # citation/reference graph keeps all parent -> child links.
+                    # Record canonical citation edges (citing -> cited) for every
+                    # discovered article (including duplicates not re-inserted as
+                    # nodes) so the citation graph keeps all links; build_citation_edge
+                    # orients each result and carries endpoint DOIs + source provider.
                     edges = [
-                        (initial_pub.id, article.id, direction, iteration)
+                        build_citation_edge(initial_pub, article, direction, iteration)
                         for article, direction in results
                         if initial_pub.id and article.id
                     ]
-                    db_manager.insert_snowball_edges(edges)
+                    db_manager.insert_citation_edges(edges)
 
                     # Filter out already seen articles
                     filtered_articles = [

@@ -87,6 +87,31 @@ def get_article_data(pub, pub_id, iteration: int = 0, selected: SelectionStage =
     return ArticleData(**pub_info)
 
 
+def build_citation_edge(seed, discovered, direction: str, iteration: int) -> Tuple:
+    """Convert a snowball result into a *canonical* directed citation edge.
+
+    ``direction`` describes how ``discovered`` relates to ``seed``:
+      - ``'citation'``  : ``discovered`` cites ``seed``  -> edge ``discovered -> seed``
+      - ``'reference'`` : ``seed`` cites ``discovered`` -> edge ``seed -> discovered``
+
+    A citation edge is always oriented *citing -> cited*, so readers never need to
+    reinterpret a provenance ``direction``. Returns
+    ``(citing_id, cited_id, citing_doi, cited_doi, source, iteration)``.
+    """
+    if direction == "citation":
+        citing, cited = discovered, seed
+    else:  # 'reference'
+        citing, cited = seed, discovered
+    return (
+        str(getattr(citing, "id", "") or ""),
+        str(getattr(cited, "id", "") or ""),
+        str(getattr(citing, "doi", "") or ""),
+        str(getattr(cited, "doi", "") or ""),
+        str(getattr(discovered, "search_method", "") or ""),
+        int(iteration),
+    )
+
+
 class DBManager:
     SQL_TYPES = {
         str: 'TEXT',
@@ -1308,75 +1333,181 @@ PRIMARY KEY(id, rater))"
             self.conn.rollback()
             raise ValueError(f"Failed to create snowball edges table: {e}")
 
-    def insert_snowball_edges(self, edges: List[Tuple]):
-        """Insert snowballing edges.
+    def create_citation_edges_table(self):
+        """Create the canonical citation-edge table.
 
-        ``edges`` is a list of ``(parent_id, child_id, direction, iteration)``
-        tuples. ``direction`` is ``'citation'`` or ``'reference'``. Duplicate
-        edges are ignored so the method is safe to call repeatedly.
+        Each row is a directed citation edge oriented ``citing_id -> cited_id``
+        (the paper ``citing_id`` cites the paper ``cited_id``). Endpoint DOIs are
+        stored so edges can be matched/kept even after duplicate works are merged,
+        and ``source`` records which provider reported the edge.
         """
-        if not edges:
-            return
-        # Ensure the table exists (safe for databases created before this feature).
-        self.create_snowball_edges_table()
         try:
-            self.cursor.executemany(
+            self.cursor.execute(
                 """
-                INSERT OR IGNORE INTO snowball_edges
-                    (parent_id, child_id, direction, iteration)
-                VALUES (?, ?, ?, ?)
-                """,
-                [
-                    (str(parent_id), str(child_id), str(direction), int(iteration))
-                    for parent_id, child_id, direction, iteration in edges
-                ],
+                CREATE TABLE IF NOT EXISTS citation_edges (
+                    citing_id TEXT,
+                    cited_id TEXT,
+                    citing_doi TEXT,
+                    cited_doi TEXT,
+                    source TEXT,
+                    iteration INTEGER,
+                    PRIMARY KEY (citing_id, cited_id)
+                )
+                """
             )
             self.conn.commit()
         except Exception as e:
             self.conn.rollback()
-            raise ValueError(f"Could not add snowball edges: {e}")
+            raise ValueError(f"Failed to create citation edges table: {e}")
+
+    def insert_citation_edges(self, edges: List[Tuple]):
+        """Insert canonical citation edges.
+
+        ``edges`` is a list of ``(citing_id, cited_id, citing_doi, cited_doi,
+        source, iteration)`` tuples (see :func:`build_citation_edge`). Edges missing
+        an endpoint id are skipped. On conflict the row is kept but any newly
+        available DOI / source is filled in, so repeated passes enrich the edge.
+        """
+        if not edges:
+            return
+        self.create_citation_edges_table()
+        rows = []
+        for citing_id, cited_id, citing_doi, cited_doi, source, iteration in edges:
+            citing_id, cited_id = str(citing_id or ""), str(cited_id or "")
+            if not citing_id or not cited_id or citing_id == cited_id:
+                continue  # need two distinct endpoints for an edge
+            rows.append((
+                citing_id, cited_id,
+                str(citing_doi or ""), str(cited_doi or ""),
+                str(source or ""), int(iteration),
+            ))
+        if not rows:
+            return
+        try:
+            self.cursor.executemany(
+                """
+                INSERT INTO citation_edges
+                    (citing_id, cited_id, citing_doi, cited_doi, source, iteration)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(citing_id, cited_id) DO UPDATE SET
+                    citing_doi = CASE WHEN excluded.citing_doi != '' THEN excluded.citing_doi ELSE citing_doi END,
+                    cited_doi  = CASE WHEN excluded.cited_doi  != '' THEN excluded.cited_doi  ELSE cited_doi  END,
+                    source     = CASE WHEN citation_edges.source = '' THEN excluded.source ELSE citation_edges.source END
+                """,
+                rows,
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            raise ValueError(f"Could not add citation edges: {e}")
+
+    def _legacy_snowball_edges_as_canonical(self, iteration=None):
+        """Read any pre-existing ``snowball_edges`` rows and convert them to the
+        canonical ``citing -> cited`` orientation. Returns a dict keyed by
+        ``(citing_id, cited_id)``. Empty when the legacy table does not exist."""
+        found = self.cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='snowball_edges';"
+        ).fetchall()
+        if not found:
+            return {}
+        query = "SELECT parent_id, child_id, direction, iteration FROM snowball_edges"
+        values = []
+        if iteration is not None:
+            query += " WHERE iteration = ?"
+            values.append(int(iteration))
+        self.cursor.execute(query, values)
+        out = {}
+        for parent_id, child_id, direction, it in self.cursor.fetchall():
+            if direction == "citation":  # child cites parent
+                citing, cited = child_id, parent_id
+            else:  # 'reference': parent cites child
+                citing, cited = parent_id, child_id
+            if not citing or not cited or citing == cited:
+                continue
+            out[(citing, cited)] = {
+                "citing_id": citing, "cited_id": cited,
+                "citing_doi": "", "cited_doi": "",
+                "source": "snowball", "iteration": it,
+            }
+        return out
+
+    def get_citation_edges(self, **kwargs):
+        """Return canonical citation edges as a list of dicts with keys
+        ``citing_id, cited_id, citing_doi, cited_doi, source, iteration``.
+
+        Optional filters: ``iteration`` and/or ``source``. Any rows from a legacy
+        ``snowball_edges`` table are converted and folded in (new rows win).
+        Returns an empty list if no edges are recorded.
+        """
+        iteration = kwargs.get("iteration")
+        source = kwargs.get("source")
+        merged = {}
+        try:
+            # Legacy edges first, so canonical rows take precedence on conflicts.
+            if source in (None, "snowball"):
+                merged.update(self._legacy_snowball_edges_as_canonical(iteration=iteration))
+
+            found = self.cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='citation_edges';"
+            ).fetchall()
+            if found:
+                conditions, values = [], []
+                if iteration is not None:
+                    conditions.append("iteration = ?")
+                    values.append(int(iteration))
+                if source is not None:
+                    conditions.append("source = ?")
+                    values.append(str(source))
+                query = "SELECT citing_id, cited_id, citing_doi, cited_doi, source, iteration FROM citation_edges"
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                self.cursor.execute(query, values)
+                for citing_id, cited_id, citing_doi, cited_doi, src, it in self.cursor.fetchall():
+                    merged[(citing_id, cited_id)] = {
+                        "citing_id": citing_id, "cited_id": cited_id,
+                        "citing_doi": citing_doi, "cited_doi": cited_doi,
+                        "source": src, "iteration": it,
+                    }
+            return list(merged.values())
+        except Exception as e:
+            print("Error getting citation edges: ", e)
+            return list(merged.values())
+
+    def insert_snowball_edges(self, edges: List[Tuple]):
+        """Backward-compatible shim: accepts legacy ``(parent_id, child_id,
+        direction, iteration)`` tuples and stores them as canonical citation edges.
+
+        Prefer :meth:`insert_citation_edges` with :func:`build_citation_edge` for
+        new code (it also records endpoint DOIs and the source provider).
+        """
+        if not edges:
+            return
+        canonical = []
+        for parent_id, child_id, direction, iteration in edges:
+            if direction == "citation":  # child cites parent
+                citing, cited = child_id, parent_id
+            else:  # 'reference': parent cites child
+                citing, cited = parent_id, child_id
+            canonical.append((citing, cited, "", "", "snowball", iteration))
+        self.insert_citation_edges(canonical)
 
     def get_snowball_edges(self, **kwargs):
-        """Return snowballing edges as a list of dicts.
-
-        Optional filters: ``iteration=<int>`` and/or ``direction=<str>``.
-        Returns an empty list if the table does not exist yet.
-        """
-        table_name = "snowball_edges"
-        try:
-            tables_found = self.cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='snowball_edges';"
-            ).fetchall()
-            if not tables_found:
-                return []
-
-            conditions = []
-            values = []
-            if "iteration" in kwargs and kwargs["iteration"] is not None:
-                conditions.append("iteration = ?")
-                values.append(int(kwargs["iteration"]))
-            if "direction" in kwargs and kwargs["direction"] is not None:
-                conditions.append("direction = ?")
-                values.append(str(kwargs["direction"]))
-
-            query = "SELECT parent_id, child_id, direction, iteration FROM snowball_edges"
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-
-            self.cursor.execute(query, values)
-            rows = self.cursor.fetchall()
-            return [
-                {
-                    "parent_id": row[0],
-                    "child_id": row[1],
-                    "direction": row[2],
-                    "iteration": row[3],
-                }
-                for row in rows
-            ]
-        except Exception as e:
-            print("Error getting snowball edges: ", e)
-            return []
+        """Deprecated: use :meth:`get_citation_edges`. Kept for backward
+        compatibility; returns canonical edges mapped onto the legacy keys
+        ``parent_id``/``child_id`` (parent=citing, child=cited) with
+        ``direction='reference'``."""
+        direction = kwargs.get("direction")
+        result = []
+        for edge in self.get_citation_edges(iteration=kwargs.get("iteration")):
+            if direction is not None and direction != "reference":
+                continue
+            result.append({
+                "parent_id": edge["citing_id"],
+                "child_id": edge["cited_id"],
+                "direction": "reference",
+                "iteration": edge["iteration"],
+            })
+        return result
 
     def create_workflow_metadata_table(self):
         """Create table to store workflow metadata (current iteration, last step, etc.)"""
@@ -1547,6 +1678,7 @@ def initialize_db(db_path: str, search_conf: dict):
     db_manager.create_screening_table(annotations)
     db_manager.create_annotations_table(annotations)
     db_manager.create_snowball_edges_table()
+    db_manager.create_citation_edges_table()
     return db_manager
 
 def get_iteration_setup(db_path: str, **kwargs):
